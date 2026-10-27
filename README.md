@@ -2,33 +2,16 @@
 
 用 Let’s Encrypt 和 Certbot 在多台服务器上按配置签发、续签证书，并应用到宝塔 Nginx、自装 Nginx 和阿里云 CDN。
 
-第一期目标见 [docs/v1-目标.md](docs/v1-目标.md)。
-
-密钥放在 `.env`。仓库只提交 [`.env.example`](.env.example)，`.env` 不要提交。
-
-## 本地检查
-
-需要 Node.js 24.22.1 或同一条 24 线上的更高版本。
+使用前复制模板：
 
 ```bash
-npm ci
-npm test
+cp config/config.example.yaml config/config.yaml
+cp .env.example .env
 ```
 
-## 运行
+说明都在 [docs](docs/README.md)：
 
-复制 `config.example.yaml` 为 `config.yaml`，复制 `.env.example` 为 `.env` 并填入阿里云密钥。然后：
-
-```bash
-docker compose up -d --build
-```
-
-容器启动后先跑一轮，再按 `TZ`（默认 `Asia/Shanghai`）每天 03:00 和 15:00 附近运行。手动执行：
-
-```bash
-docker compose run --rm --entrypoint cert-renew renew run
-docker compose run --rm --entrypoint cert-renew renew run --job www-example
-docker compose run --rm --entrypoint cert-renew renew run --dry-run
-```
-
-`--dry-run` 只做 Certbot 演练，不替换 Nginx 文件，不调用阿里云 CDN，也不执行命令钩子。DNS-01 演练时 Certbot 仍可能调用阿里云解析写入 TXT。联调签发请把配置里的 `staging` 设为 `true`。
+- [配置怎么写](docs/配置.md)
+- [怎么启动、怎么确认续签和 CDN](docs/使用.md)
+- [每个模块和函数做什么](docs/源码.md)
+- [第一期目标](docs/v1-目标.md)

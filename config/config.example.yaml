@@ -1,0 +1,67 @@
+# 使用前复制：
+#   cp config/config.example.yaml config/config.yaml
+# docker compose 把宿主机的 config/config.yaml 挂到容器内 /config/config.yaml。
+# 字段说明见 docs/配置.md。密钥写在 .env，不要写进本文件。
+
+# 可选。写进 status.json，第二期用来识别这台机器。省略则用主机名。
+serverName: origin-a
+
+letsencrypt:
+  # Let’s Encrypt 注册邮箱，必填。
+  email: ops@example.com
+  # true 走测试环境，证书不被浏览器信任。正式签发改回 false。
+  staging: false
+  # 剩余有效期少于此天数（含）才调用 Certbot。默认 30。
+  renewBeforeDays: 30
+  # ecdsa（P-256）或 rsa（2048）。默认 ecdsa。
+  keyType: ecdsa
+
+alibaba:
+  # 默认 cn-hangzhou。
+  regionId: cn-hangzhou
+
+# 每天这些整点附近检查（0–23）。省略则 3 和 15。只写 [3] 就是每天一次。
+# 每次睡前随机加 0–30 分钟，不写进数据卷。
+schedule:
+  hours: [3, 15]
+
+jobs:
+  # id 同时是 Certbot 证书名和 state/<id>.json 文件名。同一文件内唯一。
+  - id: www-example
+    enabled: true
+    domains:
+      - example.com
+      - www.example.com
+    challenge:
+      # 泛域名必须用 dns-01。zone 是阿里云解析里的主域名。
+      type: dns-01
+      zone: example.com
+      propagationSeconds: 60
+    apply:
+      # 只替换 certDir 下的证书文件，nginx -t 通过后再 reload。
+      - type: nginx
+        kind: baota
+        certDir: /www/server/panel/vhost/cert/example.com
+      # 加速域名必须已经在 CDN 上存在。先上传 CAS，再用 CertId 绑定。
+      - type: aliyun-cdn
+        domainNames:
+          - example.com
+          - www.example.com
+    # 仅这一轮真正写出新证书后执行。可整段省略。
+    hook:
+      command: /hooks/after-issue.sh
+      timeoutSeconds: 60
+
+  - id: origin-api
+    domains:
+      - api.example.com
+    challenge:
+      # 宿主机 Nginx 必须能从 webroot 提供 /.well-known/acme-challenge/。
+      type: http-01
+      webroot: /var/www/acme
+    apply:
+      - type: nginx
+        kind: custom
+        fullchainPath: /etc/nginx/ssl/api.example.com/fullchain.pem
+        privkeyPath: /etc/nginx/ssl/api.example.com/privkey.pem
+        nginxBin: /usr/sbin/nginx

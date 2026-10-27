@@ -22,6 +22,7 @@ import type {
   StatusFile,
 } from "./types.js";
 
+/** 时钟、进程、阿里云客户端都从这里注入，测试里换成假实现。 */
 export interface RunnerDeps {
   now: () => Date;
   exec: Exec;
@@ -30,6 +31,7 @@ export interface RunnerDeps {
   hostname?: string;
 }
 
+/** 按配置顺序执行任务，写 status.json，返回退出码 0 或 2。 */
 export async function runAll(input: {
   config: AppConfig;
   invalidJobs: InvalidJob[];
@@ -76,6 +78,7 @@ export async function runAll(input: {
   return exitCode;
 }
 
+/** 单条任务：跳过、签发、应用、钩子。抛错由 runAll 接住，后面的任务继续。 */
 async function runJob(job: JobConfig, input: Parameters<typeof runAll>[0]): Promise<JobRunResult> {
   const logger = input.logger;
   if (!job.enabled) {
@@ -249,6 +252,7 @@ async function runJob(job: JobConfig, input: Parameters<typeof runAll>[0]): Prom
   };
 }
 
+/** `--job` 只留下这个 id；省略则留下全部合法与非法任务。 */
 function selectJobs(jobs: JobConfig[], invalidJobs: InvalidJob[], onlyJob?: string): { runnable: JobConfig[]; invalid: InvalidJob[] } {
   if (!onlyJob) return { runnable: jobs, invalid: invalidJobs };
   return {
@@ -257,15 +261,18 @@ function selectJobs(jobs: JobConfig[], invalidJobs: InvalidJob[], onlyJob?: stri
   };
 }
 
+/** 任一 Nginx 路径或 CDN 域名在状态里不是 ok，就需要重试应用。 */
 function hasFailedApply(job: JobConfig, state: JobState): boolean {
   return job.apply.some((action) => !actionHealthy(action, state));
 }
 
+/** Nginx 看目标 fullchain 路径；CDN 看每个 `cdn:<域名>` 是否上次成功。 */
 function actionHealthy(action: ApplyAction, state: JobState): boolean {
   if (action.type === "nginx") return state.targets[nginxDestination(action).fullchain]?.ok === true;
   return action.domainNames.every((domain) => state.targets[cdnTargetKey(domain)]?.ok === true);
 }
 
+/** 跳过或重试时，把上次 nginx -t / reload 结果带进本轮 status.json。 */
 function nginxResultFromState(action: Extract<ApplyAction, { type: "nginx" }>, state: JobState): JobRunResult["nginx"][number] {
   const path = nginxDestination(action).fullchain;
   const saved = state.targets[path];
@@ -278,10 +285,12 @@ function nginxResultFromState(action: Extract<ApplyAction, { type: "nginx" }>, s
   };
 }
 
+/** 整条任务被跳过时，仍把已有 Nginx 动作结果写进汇总。 */
 function nginxView(state: JobState, job: JobConfig): JobRunResult["nginx"] {
   return job.apply.filter((action) => action.type === "nginx").map((action) => nginxResultFromState(action, state));
 }
 
+/** 把本轮汇总写到 dataDir/status.json，给第二期控制机读。 */
 function finish(
   input: Parameters<typeof runAll>[0],
   startedAt: string,

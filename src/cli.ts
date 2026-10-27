@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/** 进程入口：run 跑一轮，schedule 先跑再按时刻表循环，dns-* 给 Certbot 当钩子。 */
 import { mkdirSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, resolve } from "node:path";
@@ -9,8 +10,7 @@ import { loadDotEnv } from "./env.js";
 import { spawnExec } from "./exec.js";
 import { createLogger } from "./log.js";
 import { runAll } from "./runner.js";
-import { nextRun, sleep } from "./schedule.js";
-import { readOffsetMinutes } from "./state.js";
+import { DEFAULT_SCHEDULE_HOURS, nextRun, randomOffsetMinutes, sleep } from "./schedule.js";
 
 loadDotEnv(resolve(process.cwd(), ".env"));
 
@@ -44,6 +44,7 @@ try {
   process.exit(command === "dns-auth" || command === "dns-cleanup" ? 1 : 1);
 }
 
+/** 读配置并跑一轮。根配置失败返回 1，不写 status.json。 */
 async function executeRun(flags: { job?: string; dryRun: boolean }): Promise<number> {
   const loaded = loadConfig(configPath);
   const stamp = new Date().toISOString().replaceAll(":", "-");
@@ -69,18 +70,23 @@ async function executeRun(flags: { job?: string; dryRun: boolean }): Promise<num
   });
 }
 
+/** 启动先跑一轮；配置读不了则退出；否则睡到配置里下一次检查时刻。 */
 async function schedule(): Promise<void> {
   mkdirSync(dataDir, { recursive: true });
-  const offset = readOffsetMinutes(dataDir);
   const timeZone = process.env.TZ?.trim() || "Asia/Shanghai";
   for (;;) {
     const code = await executeRun({ dryRun: false });
     if (code === 1) process.exit(1);
-    const wait = nextRun(new Date(), timeZone, offset).getTime() - Date.now();
-    await sleep(Math.max(1000, wait));
+    const loaded = loadConfig(configPath);
+    const hours = loaded.ok ? loaded.config.schedule.hours : DEFAULT_SCHEDULE_HOURS;
+    const offset = randomOffsetMinutes();
+    const at = nextRun(new Date(), timeZone, hours, offset);
+    process.stdout.write(`${new Date().toISOString()} [-] 下次检查 ${at.toISOString()}（偏移 ${offset} 分钟）\n`);
+    await sleep(Math.max(1000, at.getTime() - Date.now()));
   }
 }
 
+/** 解析 `run` 的 `--job` 和 `--dry-run`。 */
 function readFlags(args: string[]): { job?: string; dryRun: boolean } {
   let job: string | undefined;
   let dryRun = false;

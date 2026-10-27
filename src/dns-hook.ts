@@ -10,6 +10,7 @@ interface StoredRecord {
   value: string;
 }
 
+/** Certbot auth 钩子：写 TXT，记下 RecordId；最后一个挑战写完后等待传播。 */
 export async function dnsAuth(dns: DnsService, sleep: (ms: number) => Promise<void>): Promise<void> {
   const domain = requiredEnv("CERTBOT_DOMAIN");
   const value = requiredEnv("CERTBOT_VALIDATION");
@@ -26,6 +27,7 @@ export async function dnsAuth(dns: DnsService, sleep: (ms: number) => Promise<vo
   }
 }
 
+/** Certbot cleanup 钩子：只删本轮、本 FQDN、本校验值对应的记录。 */
 export async function dnsCleanup(dns: DnsService): Promise<void> {
   const domain = requiredEnv("CERTBOT_DOMAIN");
   const value = requiredEnv("CERTBOT_VALIDATION");
@@ -39,6 +41,7 @@ export async function dnsCleanup(dns: DnsService): Promise<void> {
   writeRecords(records);
 }
 
+/** 钩子进程按 CERT_RENEW_CREDENTIAL 取阿里云密钥。 */
 export function credentialFromHookEnv(): { accessKeyId: string; accessKeySecret: string } {
   return alibabaCredential(process.env.CERT_RENEW_CREDENTIAL);
 }

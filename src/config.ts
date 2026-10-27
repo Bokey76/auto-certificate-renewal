@@ -12,11 +12,14 @@ import type {
   JobConfig,
   KeyType,
   LetsEncryptConfig,
+  ScheduleConfig,
 } from "./types.js";
+import { DEFAULT_SCHEDULE_HOURS } from "./schedule.js";
 
 const JOB_ID = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 const DOMAIN = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
 
+/** 读 YAML。根结构失败返回 ok:false；单条任务失败进 invalidJobs，其余照常。 */
 export function loadConfig(path: string): ConfigLoadResult {
   let text: string;
   try {
@@ -35,6 +38,8 @@ export function loadConfig(path: string): ConfigLoadResult {
   if (typeof letsencrypt === "string") return { ok: false, error: letsencrypt };
   const alibaba = parseAlibaba(raw.alibaba);
   if (typeof alibaba === "string") return { ok: false, error: alibaba };
+  const schedule = parseSchedule(raw.schedule);
+  if (typeof schedule === "string") return { ok: false, error: schedule };
   if (!Array.isArray(raw.jobs)) return { ok: false, error: "jobs 必须是数组" };
 
   const serverName = raw.serverName === undefined ? undefined : raw.serverName;
@@ -55,6 +60,7 @@ export function loadConfig(path: string): ConfigLoadResult {
     serverName: typeof serverName === "string" ? serverName.trim() : undefined,
     letsencrypt,
     alibaba,
+    schedule,
     jobs,
   };
   return { ok: true, config, invalidJobs };
@@ -80,6 +86,23 @@ function parseAlibaba(value: unknown): AlibabaConfig | string {
   const regionId = value.regionId === undefined ? "cn-hangzhou" : value.regionId;
   if (typeof regionId !== "string" || regionId.trim() === "") return "alibaba.regionId 必须是非空字符串";
   return { regionId: regionId.trim() };
+}
+
+function parseSchedule(value: unknown): ScheduleConfig | string {
+  if (value === undefined) return { hours: [...DEFAULT_SCHEDULE_HOURS] };
+  if (!isRecord(value)) return "schedule 必须是映射";
+  if (value.hours === undefined) return { hours: [...DEFAULT_SCHEDULE_HOURS] };
+  if (!Array.isArray(value.hours) || value.hours.length === 0) {
+    return "schedule.hours 至少要有一个 0–23 的整数";
+  }
+  const unique = new Set<number>();
+  for (const hour of value.hours) {
+    if (typeof hour !== "number" || !Number.isInteger(hour) || hour < 0 || hour > 23) {
+      return "schedule.hours 必须是 0–23 的整数";
+    }
+    unique.add(hour);
+  }
+  return { hours: [...unique].sort((a, b) => a - b) };
 }
 
 function parseJob(value: unknown, index: number, seen: Set<string>): JobConfig | InvalidJob {
@@ -215,6 +238,7 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** 宝塔用 certDir+文件名，custom 用显式路径，收成同一组目标路径。状态键用这里的 fullchain。 */
 export function nginxDestination(action: Extract<ApplyAction, { type: "nginx" }>): { fullchain: string; privkey: string; bin: string } {
   if (action.kind === "baota") {
     return {

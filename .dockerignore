@@ -6,3 +6,4 @@ dist
 !.env.example
 *.md
 config.yaml
+config/config.yaml

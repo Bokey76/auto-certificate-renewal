@@ -23,6 +23,7 @@ export function loadDotEnv(path: string): void {
   }
 }
 
+/** 读默认密钥，或 `credential: prod` 对应的 `_PROD` 那一组。缺值就抛错。 */
 export function alibabaCredential(name?: string): { accessKeyId: string; accessKeySecret: string } {
   const suffix = name ? `_${name.toUpperCase()}` : "";
   const accessKeyId = process.env[`ALIBABA_CLOUD_ACCESS_KEY_ID${suffix}`]?.trim() ?? "";

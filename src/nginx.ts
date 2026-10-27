@@ -14,6 +14,7 @@ export interface NginxApplyResult {
 
 const BAK = ".bak-cert-renew";
 
+/** 备份旧文件、写入 live 证书、chmod、nginx -t、reload。测试或 reload 失败会还原。 */
 export async function applyNginx(
   action: Extract<ApplyAction, { type: "nginx" }>,
   sourceFullchain: string,
@@ -95,6 +96,7 @@ function removeBak(bak: string | undefined): void {
   if (bak) rmSync(bak, { force: true });
 }
 
+/** Certbot live 目录里该任务的证书路径：configDir/live/<jobId>/*.pem。 */
 export function livePaths(configDir: string, jobId: string): { dir: string; fullchain: string; privkey: string } {
   const dir = join(configDir, "live", jobId);
   return { dir, fullchain: join(dir, "fullchain.pem"), privkey: join(dir, "privkey.pem") };

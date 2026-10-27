@@ -1,4 +1,4 @@
-/** 由 Certbot 传入的域名和配置里的 zone 计算阿里云主机记录。 */
+/** 由 Certbot 域名和 zone 算出阿里云 RR。apex 是 `_acme-challenge`，www 是 `_acme-challenge.www`。 */
 export function txtRecord(certbotDomain: string, zone: string): { rr: string; fqdn: string } {
   const domain = certbotDomain.replace(/^\*\./, "").toLowerCase();
   const root = zone.toLowerCase().replace(/\.$/, "");

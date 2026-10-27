@@ -16,6 +16,7 @@ export interface CdnApplyResult {
   cas?: JobState["cas"];
 }
 
+/** 检查覆盖、按指纹复用或上传 CAS、再逐个绑定 CDN。同指纹下已成功的域名跳过。 */
 export async function applyCdn(input: {
   jobId: string;
   domainNames: string[];
@@ -86,6 +87,7 @@ export async function applyCdn(input: {
   };
 }
 
+/** 状态文件里 CDN 动作的稳定键，不随 apply 数组下标变化。 */
 export function cdnTargetKey(domain: string): string {
   return `cdn:${domain.toLowerCase()}`;
 }
@@ -94,6 +96,7 @@ export function targetOk(state: TargetState | undefined): boolean {
   return state?.ok === true;
 }
 
+/** 名称 `acme-<jobId>-YYYYMMDD`，重名则尝试 -2 到 -5。 */
 async function uploadWithUniqueName(input: {
   jobId: string;
   now: Date;

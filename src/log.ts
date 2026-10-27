@@ -6,6 +6,7 @@ export interface Logger {
   path: string;
 }
 
+/** 一行同时写 stdout 和文件。格式：ISO 时间 [任务id] 中文说明。 */
 export function createLogger(logPath: string): Logger {
   mkdirSync(dirname(logPath), { recursive: true });
   return {

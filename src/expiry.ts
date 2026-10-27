@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { X509Certificate } from "node:crypto";
 import type { CertificateInfo } from "./types.js";
 
+/** 读 PEM 里第一张证书的 SHA-256 指纹、到期时间和 SAN。文件不存在则返回 undefined。 */
 export function readCertificate(fullchainPath: string): CertificateInfo | undefined {
   if (!existsSync(fullchainPath)) return undefined;
   const pem = readFileSync(fullchainPath, "utf8");
@@ -15,6 +16,7 @@ export function readCertificate(fullchainPath: string): CertificateInfo | undefi
   };
 }
 
+/** 从 SAN 和 CN 收集 DNS 名，小写去重。 */
 export function subjectAltNames(cert: X509Certificate): string[] {
   const names = new Set<string>();
   const alt = cert.subjectAltName ?? "";
@@ -27,7 +29,7 @@ export function subjectAltNames(cert: X509Certificate): string[] {
   return [...names];
 }
 
-/** name 被 san 覆盖。泛域名只覆盖下一级。 */
+/** 加速域名是否被证书覆盖。`*.example.com` 只覆盖下一级，不覆盖 apex。 */
 export function nameCovered(name: string, sans: string[]): boolean {
   const host = name.toLowerCase();
   for (const san of sans) {
@@ -43,6 +45,7 @@ export function nameCovered(name: string, sans: string[]): boolean {
   return false;
 }
 
+/** 剩余有效期是否已经落入续签窗口（含到期当天）。 */
 export function withinRenewWindow(notAfterIso: string, renewBeforeDays: number, now: Date): boolean {
   const notAfter = new Date(notAfterIso).getTime();
   const windowMs = renewBeforeDays * 24 * 60 * 60 * 1000;

@@ -3,8 +3,10 @@ import { join } from "node:path";
 import { outputOf } from "./exec.js";
 import type { CertbotRequest, CertbotResult, Exec } from "./types.js";
 
+/** Certbot 单次调用上限。DNS 传播等待也算在里面。 */
 export const CERTBOT_TIMEOUT_MS = 15 * 60 * 1000;
 
+/** 拼 certonly 参数。已有 lineage 时由调用方决定是否带 --force-renewal。 */
 export function buildCertbotArgs(request: CertbotRequest): string[] {
   const args = [
     "certonly",
@@ -45,6 +47,7 @@ export function buildCertbotArgs(request: CertbotRequest): string[] {
   return args;
 }
 
+/** DNS-01 时把 zone、传播秒数、记录文件和凭据名传给 dns-auth / dns-cleanup。 */
 export function certbotEnv(request: CertbotRequest): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   if (request.job.challenge.type === "dns-01") {
@@ -58,6 +61,7 @@ export function certbotEnv(request: CertbotRequest): NodeJS.ProcessEnv {
   return env;
 }
 
+/** 执行 Certbot。二进制可用 CERTBOT_BIN 覆盖。 */
 export async function runCertbot(request: CertbotRequest, exec: Exec): Promise<CertbotResult> {
   const bin = process.env.CERTBOT_BIN?.trim() || "certbot";
   const result = await exec([bin, ...buildCertbotArgs(request)], {
@@ -67,10 +71,12 @@ export async function runCertbot(request: CertbotRequest, exec: Exec): Promise<C
   return result;
 }
 
+/** 该任务是否已经有 renewal 配置或 live 目录。 */
 export function lineageExists(configDir: string, jobId: string): boolean {
   return existsSync(join(configDir, "renewal", `${jobId}.conf`)) || existsSync(join(configDir, "live", jobId));
 }
 
+/** 把 Certbot 的 stdout/stderr 收成一条失败原因。 */
 export function certbotFailure(result: CertbotResult): string {
   return outputOf(result);
 }

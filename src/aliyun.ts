@@ -11,6 +11,7 @@ export interface AliyunClients {
   dns: DnsService;
 }
 
+/** 用官方 SDK 构造 CAS / CDN / DNS 三个客户端。credentialName 对应 .env 里的 _NAME 后缀。 */
 export function createAliyunClients(regionId: string, credentialName?: string): AliyunClients {
   const credential = alibabaCredential(credentialName);
   const cas = new casModule.default(config(credential, "cas.aliyuncs.com", regionId));

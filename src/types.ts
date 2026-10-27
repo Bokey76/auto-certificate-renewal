@@ -1,3 +1,4 @@
+/** 配置、状态和可注入依赖的类型。字段含义见 docs/配置.md 与 docs/源码.md。 */
 export type KeyType = "ecdsa" | "rsa";
 
 export interface LetsEncryptConfig {
@@ -9,6 +10,11 @@ export interface LetsEncryptConfig {
 
 export interface AlibabaConfig {
   regionId: string;
+}
+
+export interface ScheduleConfig {
+  /** 时区内每天检查的小时，0–23，至少一个。默认 3 和 15。 */
+  hours: number[];
 }
 
 export interface DnsChallenge {
@@ -69,6 +75,7 @@ export interface AppConfig {
   serverName?: string;
   letsencrypt: LetsEncryptConfig;
   alibaba: AlibabaConfig;
+  schedule: ScheduleConfig;
   jobs: JobConfig[];
 }
 

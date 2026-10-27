@@ -52,6 +52,7 @@ jobs:
   assert.match(loaded.invalidJobs[0].error, /dns-01/);
   assert.equal(loaded.config.letsencrypt.renewBeforeDays, 30);
   assert.equal(loaded.config.letsencrypt.keyType, "ecdsa");
+  assert.deepEqual(loaded.config.schedule.hours, [3, 15]);
   assert.equal(loaded.config.jobs[0].challenge.type, "http-01");
   if (loaded.config.jobs[0].challenge.type === "http-01") {
     assert.equal(loaded.config.jobs[0].challenge.webroot, "/var/www/acme");
@@ -78,7 +79,7 @@ jobs:
 });
 
 test("示例配置可以被接受", () => {
-  const loaded = loadConfig(fileURLToPath(new URL("../config.example.yaml", import.meta.url)));
+  const loaded = loadConfig(fileURLToPath(new URL("../config/config.example.yaml", import.meta.url)));
   assert.equal(loaded.ok, true);
   if (!loaded.ok) return;
   assert.equal(loaded.invalidJobs.length, 0);
@@ -86,4 +87,39 @@ test("示例配置可以被接受", () => {
     loaded.config.jobs.map((job) => job.id),
     ["www-example", "origin-api"],
   );
+  assert.deepEqual(loaded.config.schedule.hours, [3, 15]);
+});
+
+test("可以自定义检查小时并去重排序", () => {
+  const loaded = loadConfig(
+    writeConfig(`
+${header}
+schedule:
+  hours: [12, 1, 1]
+jobs:
+  - id: www
+    domains: [example.com]
+    challenge: { type: http-01 }
+`),
+  );
+  assert.equal(loaded.ok, true);
+  if (!loaded.ok) return;
+  assert.deepEqual(loaded.config.schedule.hours, [1, 12]);
+});
+
+test("检查小时不合法时整份失败", () => {
+  const loaded = loadConfig(
+    writeConfig(`
+${header}
+schedule:
+  hours: [24]
+jobs:
+  - id: www
+    domains: [example.com]
+    challenge: { type: http-01 }
+`),
+  );
+  assert.equal(loaded.ok, false);
+  if (loaded.ok) return;
+  assert.match(loaded.error, /schedule\.hours/);
 });

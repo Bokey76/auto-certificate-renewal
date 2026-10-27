@@ -1,5 +1,6 @@
 import type { Exec } from "./types.js";
 
+/** 在容器内执行 hook.command。非 0 或超时抛错，由 runner 记失败，不回滚 Nginx/CDN。 */
 export async function runHook(input: {
   command: string;
   timeoutSeconds: number;

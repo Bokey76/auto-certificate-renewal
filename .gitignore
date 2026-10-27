@@ -3,6 +3,10 @@
 .env.*
 !.env.example
 
+# 本机任务配置。仓库只提交 config/config.example.yaml。
+config/config.yaml
+/config.yaml
+
 # 证书与私钥，无论出现在哪里都不提交。
 *.pem
 *.key
