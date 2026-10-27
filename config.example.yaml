@@ -1,0 +1,45 @@
+serverName: origin-a
+
+letsencrypt:
+  email: ops@example.com
+  staging: false
+  renewBeforeDays: 30
+  keyType: ecdsa
+
+alibaba:
+  regionId: cn-hangzhou
+
+jobs:
+  - id: www-example
+    enabled: true
+    domains:
+      - example.com
+      - www.example.com
+    challenge:
+      type: dns-01
+      zone: example.com
+      propagationSeconds: 60
+    apply:
+      - type: nginx
+        kind: baota
+        certDir: /www/server/panel/vhost/cert/example.com
+      - type: aliyun-cdn
+        domainNames:
+          - example.com
+          - www.example.com
+    hook:
+      command: /hooks/after-issue.sh
+      timeoutSeconds: 60
+
+  - id: origin-api
+    domains:
+      - api.example.com
+    challenge:
+      type: http-01
+      webroot: /var/www/acme
+    apply:
+      - type: nginx
+        kind: custom
+        fullchainPath: /etc/nginx/ssl/api.example.com/fullchain.pem
+        privkeyPath: /etc/nginx/ssl/api.example.com/privkey.pem
+        nginxBin: /usr/sbin/nginx

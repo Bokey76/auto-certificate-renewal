@@ -1,0 +1,15 @@
+# 密钥。公开仓库只提交 .env.example。
+.env
+.env.*
+!.env.example
+
+# 证书与私钥，无论出现在哪里都不提交。
+*.pem
+*.key
+*.pfx
+*.p12
+*.jks
+
+node_modules/
+dist/
+*.tsbuildinfo

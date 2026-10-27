@@ -1,0 +1,29 @@
+{
+  "name": "auto-certificate-renewal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "cert-renew": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=24.22.1"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node --test \"dist/**/*.test.js\"",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@alicloud/alidns20150109": "^4.6.1",
+    "@alicloud/cas20200407": "^3.2.14",
+    "@alicloud/cdn20180510": "^9.0.0",
+    "@alicloud/openapi-core": "^1.0.8",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3"
+  }
+}

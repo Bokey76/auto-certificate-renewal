@@ -1,0 +1,18 @@
+services:
+  renew:
+    image: auto-certificate-renewal:local
+    build: .
+    command: ["cert-renew", "schedule"]
+    pid: host
+    privileged: true
+    env_file:
+      - .env
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+      - acme-data:/var/lib/acme
+      - /www/server/panel/vhost/cert:/www/server/panel/vhost/cert
+      - /var/www/acme:/var/www/acme
+    restart: unless-stopped
+
+volumes:
+  acme-data:
