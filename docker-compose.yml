@@ -1,3 +1,5 @@
+# 在这台机器上对着 Dockerfile 构建时保留 build 和下面的本地 tag。
+# 本机构建并推到阿里云容器镜像服务时：image 改成仓库全名，删掉 build。步骤见 docs/使用.md。
 services:
   renew:
     image: auto-certificate-renewal:local

@@ -81,9 +81,9 @@ function parseLetsEncrypt(value: unknown): LetsEncryptConfig | string {
 }
 
 function parseAlibaba(value: unknown): AlibabaConfig | string {
-  if (value === undefined) return { regionId: "cn-hangzhou" };
+  if (value === undefined) return { regionId: "cn-shenzhen" };
   if (!isRecord(value)) return "alibaba 必须是映射";
-  const regionId = value.regionId === undefined ? "cn-hangzhou" : value.regionId;
+  const regionId = value.regionId === undefined ? "cn-shenzhen" : value.regionId;
   if (typeof regionId !== "string" || regionId.trim() === "") return "alibaba.regionId 必须是非空字符串";
   return { regionId: regionId.trim() };
 }

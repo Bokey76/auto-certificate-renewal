@@ -69,7 +69,7 @@ function baseConfig(): AppConfig {
   return {
     serverName: "origin-a",
     letsencrypt: { email: "ops@example.com", staging: true, renewBeforeDays: 30, keyType: "ecdsa" },
-    alibaba: { regionId: "cn-hangzhou" },
+    alibaba: { regionId: "cn-shenzhen" },
     schedule: { hours: [3, 15] },
     jobs: [],
   };

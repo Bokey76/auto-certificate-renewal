@@ -1,4 +1,5 @@
-# 密钥。公开仓库只提交 .env.example。
+# 公开开源仓库：真实密钥、真实配置、证书都不提交。规则见 AGENTS.md。
+# 密钥。只提交 .env.example。
 .env
 .env.*
 !.env.example

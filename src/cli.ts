@@ -22,7 +22,7 @@ const command = argv[0] || "run";
 
 try {
   if (command === "dns-auth" || command === "dns-cleanup") {
-    const regionId = process.env.ALIBABA_CLOUD_REGION_ID?.trim() || "cn-hangzhou";
+    const regionId = process.env.ALIBABA_CLOUD_REGION_ID?.trim() || "cn-shenzhen";
     const clients = createAliyunClients(regionId, process.env.CERT_RENEW_CREDENTIAL);
     if (command === "dns-auth") await dnsAuth(clients.dns, sleep);
     else await dnsCleanup(clients.dns);

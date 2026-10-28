@@ -54,7 +54,7 @@ test("阿里云客户端可以按区域构造", () => {
   process.env.ALIBABA_CLOUD_ACCESS_KEY_ID = "test-id";
   process.env.ALIBABA_CLOUD_ACCESS_KEY_SECRET = "test-secret";
   try {
-    const clients = createAliyunClients("cn-hangzhou");
+    const clients = createAliyunClients("cn-shenzhen");
     assert.equal(typeof clients.certificates.upload, "function");
     assert.equal(typeof clients.cdn.setCertificate, "function");
     assert.equal(typeof clients.dns.addTxt, "function");

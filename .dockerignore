@@ -7,3 +7,8 @@ dist
 *.md
 config.yaml
 config/config.yaml
+*.pem
+*.key
+*.pfx
+*.p12
+*.jks

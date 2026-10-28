@@ -18,7 +18,7 @@ serverName: origin-a
 letsencrypt:
   email: ops@example.com
 alibaba:
-  regionId: cn-hangzhou
+  regionId: cn-shenzhen
 `;
 
 test("根配置无法解析时整份失败", () => {
