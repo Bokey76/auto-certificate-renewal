@@ -3,7 +3,7 @@
 # docker compose 把宿主机的 config/config.yaml 挂到容器内 /config/config.yaml。
 # 字段说明见 docs/配置.md。密钥写在 .env，不要写进本文件。
 
-# 可选。写进 status.json，第二期用来识别这台机器。省略则用主机名。
+# 可选。写进 status.json，用来识别这台机器。省略则用主机名。
 serverName: origin-a
 
 letsencrypt:
@@ -17,7 +17,7 @@ letsencrypt:
   keyType: ecdsa
 
 alibaba:
-  # 默认 cn-hangzhou。
+  # 按账号实际地域填写。省略整段 alibaba 时，程序使用 cn-shenzhen。
   regionId: cn-hangzhou
 
 # 每天这些整点附近检查（0–23）。省略则 3 和 15。只写 [3] 就是每天一次。
