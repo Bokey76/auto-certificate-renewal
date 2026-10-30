@@ -23,7 +23,7 @@
 ## 实现范围
 
 - 当前：单机 Docker，YAML 驱动，Certbot，宝塔/自装 Nginx，阿里云 CDN 内容分发，阿里云 DNS-01
-- 还没做的控制机、网页、通知和多机共用证书见 [docs/目标.md](docs/目标.md)。用户没要求就不要做
+- 本机状态网页已经有了。还没做的多机汇总、配置下发、通知和多机共用证书见 [docs/目标.md](docs/目标.md)。用户没要求就不要做
 - 不实现 ACME，不改 Nginx server 块，不写宝塔数据库，不删 CAS 旧证，不创建 CDN 域名
 
 操作说明写在根目录 `README.md` 和 `docs/`。不要把已经实现的行为再写回 [docs/目标.md](docs/目标.md)。

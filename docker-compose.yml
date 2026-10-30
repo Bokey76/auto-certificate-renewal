@@ -16,5 +16,19 @@ services:
       - /var/www/acme:/var/www/acme
     restart: unless-stopped
 
+  # 状态页。不挂证书目录，也不使用 privileged / pid: host。
+  web:
+    image: auto-certificate-renewal:local
+    build: .
+    command: ["cert-renew", "web"]
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - ./config/config.yaml:/config/config.yaml:ro
+      - acme-data:/var/lib/acme
+    restart: unless-stopped
+
 volumes:
   acme-data:

@@ -102,8 +102,8 @@ ssl_certificate_key  /www/server/panel/vhost/cert/example.com/privkey.pem;
 
 默认命令是 `cert-renew schedule`：
 
-1. 容器每次启动先跑一轮。
-2. 按 `.env` 里的 `TZ`（默认 `Asia/Shanghai`）和 `schedule.hours`（默认 03:00、15:00）再跑。每次睡前随机加 0–30 分钟，多台机器错开。
+1. 未暂停时，容器每次启动先跑一轮。暂停记在数据卷里，重启后仍然有效，这时启动不跑。
+2. 按 `.env` 里的 `TZ`（默认 `Asia/Shanghai`）和 `schedule.hours`（默认 03:00、15:00）再跑。每次进入等待时随机加 0–30 分钟，多台机器错开。
 3. 配置读不了时进程退出，方便 compose 重启后重新读挂载。有任务失败时继续按时刻表跑。
 
 证书剩余时间多于 `renewBeforeDays`（默认 30 天），并且 Nginx / CDN 上次都成功：跳过，不调用 Certbot。证书缺失、进入续签窗口或上次签发失败：重新签发。证书没变、只有应用失败：不签发，只重试失败的 Nginx 或 CDN。
@@ -130,6 +130,12 @@ ssl_certificate_key  /www/server/panel/vhost/cert/example.com/privkey.pem;
 
 退出码：`0` 全部成功或跳过；`1` 配置读不了；`2` 至少一条任务失败。
 
+## 状态网页
+
+同一台机器上还有一个 `web` 容器，打开 `http://127.0.0.1:8787`。口令是 `.env` 里的 `WEB_PASSWORD`，至少 12 位。页面看最近一轮、每张证书、Nginx 和 CDN 的结果，以及日志末尾。三个按钮是：立即检查、暂停定时检查、恢复定时检查。
+
+立即检查仍受 `renewBeforeDays` 约束，证书还早就不会重新签发。网页不改配置，也不显示私钥。服务器上的打开方式和暂停规则见 [docs/使用.md](docs/使用.md)。
+
 ## 确认是否生效
 
 ```bash
@@ -153,7 +159,7 @@ docker compose exec renew cat /var/lib/acme/state/www-example.json
 | [docs/执行流程.md](docs/执行流程.md) | 一轮里如何决定签发或跳过，Nginx / CDN 如何换证 |
 | [docs/源码.md](docs/源码.md) | 模块和导出函数 |
 | [docs/项目说明.md](docs/项目说明.md) | 改代码前看的约束 |
-| [docs/目标.md](docs/目标.md) | 还没有做的控制机、网页、通知和多机共用证书 |
+| [docs/目标.md](docs/目标.md) | 还没有做的多机汇总、配置下发、通知和多机共用证书 |
 | [AGENTS.md](AGENTS.md) | 公开仓库不能提交的内容 |
 
 ## 开发
