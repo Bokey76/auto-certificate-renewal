@@ -97,6 +97,27 @@ th, td { text-align: left; padding: 10px 6px; border-bottom: 1px solid var(--lin
 th { color: var(--muted); font-weight: 600; }
 td.row-actions { white-space: nowrap; text-align: right; width: 1%; }
 .toolbar { display: flex; justify-content: flex-end; margin: 0 0 12px; }
+.log-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 24px 0 8px;
+}
+.log-head h2 { margin: 0; }
+.log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.log-toolbar label { margin: 0; }
+.log-toolbar select {
+  width: auto;
+  min-width: 240px;
+  max-width: min(100%, 420px);
+}
 pre.log {
   background: #0f1720;
   color: #e7eef5;
@@ -119,13 +140,16 @@ pre.log {
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .note { margin: 8px 0; }
 
+.accordion-stack { display: flex; flex-direction: column; gap: 8px; }
+.accordion-stack.nested { margin-top: 8px; }
 .accordion {
   border: 1px solid var(--line);
   border-radius: 10px;
-  margin: 12px 0;
+  margin: 0;
   background: #fff;
   overflow: hidden;
 }
+.accordion .accordion { border-radius: 8px; }
 .accordion-bar {
   display: flex;
   align-items: center;
@@ -133,7 +157,7 @@ pre.log {
   padding-right: 12px;
   background: #fff;
 }
-.accordion.open .accordion-bar { background: var(--theme-soft); }
+.accordion.open > .accordion-bar { background: var(--theme-soft); }
 .accordion-head {
   flex: 1;
   background: transparent;
@@ -145,10 +169,11 @@ pre.log {
 }
 .accordion-head:hover { color: var(--theme-dark); }
 .accordion-head .chevron { transition: transform 0.15s ease; }
-.accordion.open .accordion-head .chevron { transform: rotate(90deg); }
+.accordion.open > .accordion-bar .chevron { transform: rotate(90deg); }
 .accordion-title { font-weight: 600; }
 .accordion-body { display: none; padding: 8px 16px 16px; border-top: 1px solid var(--theme-line); }
-.accordion.open .accordion-body { display: block; }
+.accordion.open > .accordion-body { display: block; }
+.accordion .accordion > .accordion-bar .accordion-head { padding: 8px 12px; }
 
 .dialog[hidden] { display: none !important; }
 .dialog {

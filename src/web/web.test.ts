@@ -30,6 +30,7 @@ test("没有管理员时进入初始化页，创建后可以登录", async () =>
     const html = await app.text();
     assert.match(html, /立即检查/);
     assert.match(html, /任务/);
+    assert.match(html, /全局配置/);
     assert.match(html, /创建凭据/);
     assert.match(html, /创建管理员/);
     assert.equal(html.includes("SECRETPEM"), false);
@@ -113,7 +114,7 @@ test("登录后可以看概览，三个按钮写到控制文件", async () => {
     const html = await page.text();
     assert.match(html, /立即检查/);
     assert.match(html, /暂停定时检查/);
-    assert.match(html, /最近日志/);
+    assert.match(html, /id="log-file"/);
     assert.equal(html.includes("SECRETPEM"), false);
     const csrf = /name="csrf-token" content="([a-f0-9]+)"/.exec(html)?.[1] ?? "";
     assert.equal(csrf.length > 0, true);
@@ -122,11 +123,18 @@ test("登录后可以看概览，三个按钮写到控制文件", async () => {
     assert.equal(missing.status, 403);
 
     const overview = await fetch(`${started.base}/api/overview`, { headers: { cookie: loggedIn.cookie } });
-    const view = await overview.json() as { server: { serverName: string; jobs: Array<{ id: string; status: string }> }; log: { lines: string[] } };
+    const view = await overview.json() as {
+      server: { serverName: string; jobs: Array<{ id: string; status: string }> };
+      log: { lines: string[]; name: string | null };
+      logs: { current: string | null; files: Array<{ name: string; current: boolean }> };
+    };
     assert.equal(view.server.serverName, "origin-a");
     assert.equal(view.server.jobs[0].id, "www-example");
     assert.equal(view.server.jobs[0].status, "skipped");
     assert.equal(view.log.lines.length, 1);
+    assert.equal(view.log.name, "round.log");
+    assert.equal(view.logs.current, "round.log");
+    assert.equal(view.logs.files[0].name, "round.log");
     assert.equal(JSON.stringify(view).includes("SECRETPEM"), false);
 
     const headers = { cookie: loggedIn.cookie, "x-csrf-token": csrf };
@@ -182,6 +190,62 @@ test("调度正在检查时，暂停和再跑一轮用另一句提示", async ()
     assert.equal(paused.message, "暂停已记下，当前这轮会跑完");
     const run = await postJson(started, "/api/run", headers);
     assert.equal(run.message, "已记下，这一轮结束后再跑一轮");
+  } finally {
+    await started.close();
+  }
+});
+
+test("登录后可以按文件名读历史日志，不能逃出 logs", async () => {
+  const data = sampleDir();
+  mkdirSync(join(data, "logs"));
+  writeFileSync(join(data, "logs", "2026-10-30T02-00-00.000Z.log"), "older-round\n", "utf8");
+  writeFileSync(join(data, "logs", "2026-10-30T03-00-00.000Z.log"), "current-round\n", "utf8");
+  writeFileSync(join(data, "secret.txt"), "SECRETPEM\n", "utf8");
+  writeFileSync(
+    join(data, "status.json"),
+    JSON.stringify({
+      serverName: "origin-a",
+      startedAt: "2026-10-30T02:00:00.000Z",
+      finishedAt: "2026-10-30T02:01:00.000Z",
+      exitCode: 0,
+      logPath: join(data, "logs", "2026-10-30T03-00-00.000Z.log"),
+      jobs: [],
+    }),
+    "utf8",
+  );
+  const started = await boot(data);
+  try {
+    const anon = await fetch(`${started.base}/api/logs?name=2026-10-30T02-00-00.000Z.log`);
+    assert.equal(anon.status, 401);
+
+    const loggedIn = await postLogin(started, password);
+    const overview = await fetch(`${started.base}/api/overview`, { headers: { cookie: loggedIn.cookie } });
+    const view = await overview.json() as { logs: { current: string; files: Array<{ name: string }> }; log: { lines: string[] } };
+    assert.equal(view.logs.current, "2026-10-30T03-00-00.000Z.log");
+    assert.deepEqual(view.logs.files.map((file) => file.name), [
+      "2026-10-30T03-00-00.000Z.log",
+      "2026-10-30T02-00-00.000Z.log",
+    ]);
+    assert.match(view.log.lines[0] ?? "", /current-round/);
+
+    const older = await fetch(`${started.base}/api/logs?name=2026-10-30T02-00-00.000Z.log`, { headers: { cookie: loggedIn.cookie } });
+    assert.equal(older.status, 200);
+    const body = await older.json() as { name: string; lines: string[] };
+    assert.equal(body.name, "2026-10-30T02-00-00.000Z.log");
+    assert.deepEqual(body.lines, ["older-round"]);
+
+    const traversal = await fetch(`${started.base}/api/logs?name=${encodeURIComponent("../secret.txt")}`, {
+      headers: { cookie: loggedIn.cookie },
+    });
+    assert.equal(traversal.status, 400);
+    const bad = await traversal.json() as { error: string };
+    assert.equal(bad.error, "日志路径不合法");
+    assert.equal(JSON.stringify(bad).includes("SECRETPEM"), false);
+
+    const nested = await fetch(`${started.base}/api/logs?name=${encodeURIComponent("foo/bar.log")}`, {
+      headers: { cookie: loggedIn.cookie },
+    });
+    assert.equal(nested.status, 400);
   } finally {
     await started.close();
   }

@@ -17,7 +17,7 @@ import {
 import { configDocument, loadConfig, readConfigText, saveConfigObject, saveConfigText } from "../config/config.js";
 import { deleteCredential, listCredentialViews, upsertCredential } from "../config/credentials.js";
 import { isPaused, isRunRequested, readScheduler, requestRun, schedulerOnline, setPaused } from "../schedule/control.js";
-import { loadOverview } from "./overview.js";
+import { isLogName, loadOverview, readLogByName } from "./overview.js";
 
 const LOGIN_BODY_LIMIT = 1024;
 const BODY_LIMIT = 256 * 1024;
@@ -135,6 +135,15 @@ export function startWeb(options: WebOptions): Promise<WebServer> {
         now: now(),
         timeZone: options.timeZone,
       }));
+      return;
+    }
+    if (method === "GET" && url.pathname === "/api/logs") {
+      const name = url.searchParams.get("name") ?? "";
+      if (!isLogName(name)) {
+        sendJson(res, 400, { ok: false, error: "日志路径不合法" });
+        return;
+      }
+      sendJson(res, 200, readLogByName(options.dataDir, name));
       return;
     }
     if (method === "GET" && url.pathname === "/api/config/raw") {

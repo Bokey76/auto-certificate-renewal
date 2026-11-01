@@ -164,3 +164,40 @@ test("表单对象可以写成 YAML 再读回来", () => {
   assert.equal(loaded.config.jobs[0].id, "www");
   assert.equal(parseConfig(readFileSync(path, "utf8")).ok, true);
 });
+
+test("一条任务可以有多条 Nginx 和 CDN", () => {
+  const path = writeConfig("jobs: []\n");
+  const saved = saveConfigObject(path, {
+    serverName: "origin-a",
+    letsencrypt: { email: "ops@example.com", staging: false, renewBeforeDays: 30, keyType: "ecdsa" },
+    alibaba: { regionId: "cn-hangzhou" },
+    schedule: { hours: [3] },
+    jobs: [
+      {
+        id: "www",
+        enabled: true,
+        domains: ["example.com"],
+        challenge: { type: "dns-01", zone: "example.com", propagationSeconds: 60 },
+        apply: [
+          { type: "nginx", kind: "baota", certDir: "/www/server/panel/vhost/cert/a", fullchainName: "fullchain.cer", privkeyName: "privkey.key" },
+          { type: "nginx", kind: "custom", fullchainPath: "/etc/nginx/ssl/a.pem", privkeyPath: "/etc/nginx/ssl/a.key", nginxBin: "/usr/sbin/nginx" },
+          { type: "aliyun-cdn", domainNames: ["example.com"] },
+          { type: "aliyun-cdn", domainNames: ["cdn.example.com"] },
+        ],
+      },
+    ],
+  });
+  assert.equal(saved.ok, true);
+  const loaded = loadConfig(path);
+  assert.equal(loaded.ok, true);
+  if (!loaded.ok) return;
+  assert.equal(loaded.config.jobs[0].apply.length, 4);
+  assert.equal(loaded.config.jobs[0].apply.filter((item) => item.type === "nginx").length, 2);
+  assert.equal(loaded.config.jobs[0].apply.filter((item) => item.type === "aliyun-cdn").length, 2);
+  const baota = loaded.config.jobs[0].apply[0];
+  assert.equal(baota.type, "nginx");
+  if (baota.type === "nginx" && baota.kind === "baota") {
+    assert.equal(baota.fullchainName, "fullchain.cer");
+    assert.equal(baota.privkeyName, "privkey.key");
+  }
+});

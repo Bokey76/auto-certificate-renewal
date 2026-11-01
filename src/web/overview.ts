@@ -1,6 +1,6 @@
 /** 把配置、最近一轮、任务状态和调度心跳收成网页用的一页数据。不读证书和密钥。 */
-import { closeSync, existsSync, openSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
+import { basename, isAbsolute, join, relative, sep } from "node:path";
 import { loadConfig, nginxDestination } from "../config/config.js";
 import { cdnTargetKey } from "../renew/cdn.js";
 import { readJobState } from "../renew/state.js";
@@ -9,6 +9,8 @@ import type { ApplyAction, JobConfig, JobRunResult, JobState, StatusFile } from 
 
 const LOG_TAIL_LINES = 200;
 const LOG_TAIL_BYTES = 64 * 1024;
+const LOG_LIST_LIMIT = 50;
+const LOG_NAME = /^[A-Za-z0-9._-]+\.log$/;
 const JOB_ID = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 
 export interface OverviewNginx {
@@ -76,7 +78,26 @@ export interface Overview {
     renewBeforeDays: number | null;
     jobs: OverviewJob[];
   };
-  log: { lines: string[]; missing: boolean; message: string | null };
+  log: OverviewLog;
+  logs: { current: string | null; files: LogFileView[] };
+}
+
+export interface OverviewLog {
+  name: string | null;
+  lines: string[];
+  missing: boolean;
+  message: string | null;
+}
+
+export interface LogFileView {
+  name: string;
+  label: string;
+  current: boolean;
+}
+
+/** 日志文件名必须是 logs 目录下的裸名字，不能带路径。 */
+export function isLogName(name: string): boolean {
+  return name.length > 4 && name.length <= 128 && LOG_NAME.test(name);
 }
 
 /** 把本机配置、最近一轮、任务状态和心跳收成一页。不读证书和密钥。 */
@@ -102,9 +123,13 @@ export function loadOverview(input: { dataDir: string; configPath: string; now: 
   const renewBeforeDays = loaded.ok ? loaded.config.letsencrypt.renewBeforeDays : null;
   const serverName = status?.serverName?.trim() || (loaded.ok ? loaded.config.serverName?.trim() : "") || "未命名";
   const jobs = loaded.ok ? buildJobs(input.dataDir, loaded.config.jobs, loaded.invalidJobs, status, input.now, renewBeforeDays, input.timeZone) : [];
-  const log = statusRead.error
-    ? { lines: [], missing: true, message: statusRead.error }
-    : readLogTail(input.dataDir, status?.logPath);
+  const current = currentLogName(input.dataDir, status?.logPath);
+  const files = listLogFiles(input.dataDir, current, input.timeZone);
+  const log: OverviewLog = statusRead.error
+    ? { name: current, lines: [], missing: true, message: statusRead.error }
+    : current
+      ? readLogByName(input.dataDir, current)
+      : { name: null, ...readLogTail(input.dataDir, status?.logPath) };
 
   const counts = countJobs(status);
   return {
@@ -139,6 +164,7 @@ export function loadOverview(input: { dataDir: string; configPath: string; now: 
       jobs,
     },
     log,
+    logs: { current, files },
   };
 }
 
@@ -185,6 +211,70 @@ export function readLogTail(dataDir: string, logPath: string | undefined): { lin
   } finally {
     closeSync(fd);
   }
+}
+
+/** 按裸文件名读 logs/ 下某一文件末尾。非法名字不读盘。 */
+export function readLogByName(dataDir: string, name: string): OverviewLog {
+  if (!isLogName(name)) return { name: null, lines: [], missing: true, message: "日志路径不合法" };
+  const tail = readLogTail(dataDir, join(dataDir, "logs", name));
+  return { name, ...tail };
+}
+
+/** 列出 logs/ 下最近的日志文件，新的在前。最多 50 个。 */
+export function listLogFiles(dataDir: string, currentName: string | null, timeZone: string): LogFileView[] {
+  const logsDir = join(dataDir, "logs");
+  let names: string[] = [];
+  try {
+    names = readdirSync(logsDir).filter((entry) => {
+      if (!isLogName(entry)) return false;
+      try {
+        return statSync(join(logsDir, entry)).isFile();
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    names = [];
+  }
+  names.sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+  if (currentName && isLogName(currentName) && !names.includes(currentName)) names.unshift(currentName);
+  return names.slice(0, LOG_LIST_LIMIT).map((name) => ({
+    name,
+    label: logLabel(name, timeZone),
+    current: name === currentName,
+  }));
+}
+
+function currentLogName(dataDir: string, logPath: string | undefined): string | null {
+  if (!logPath) return null;
+  const logsDir = join(dataDir, "logs");
+  let root: string;
+  try {
+    root = realpathSync(logsDir);
+  } catch {
+    return null;
+  }
+  try {
+    const file = realpathSync(logPath);
+    if (!insideDir(root, file)) return null;
+    const name = basename(file);
+    return isLogName(name) ? name : null;
+  } catch {
+    const name = basename(logPath);
+    if (!isLogName(name)) return null;
+    try {
+      const candidate = realpathSync(join(root, name));
+      return insideDir(root, candidate) ? name : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function logLabel(name: string, timeZone: string): string {
+  const stamp = name.replace(/\.log$/i, "");
+  const iso = stamp.replace(/^(\d{4}-\d{2}-\d{2}T\d{2})-(\d{2})-(\d{2}(?:\.\d+)?Z)$/, "$1:$2:$3");
+  return formatTime(iso, timeZone) ?? name;
 }
 
 function resolveInside(logPath: string): string {

@@ -7,6 +7,10 @@ const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute("con
 
 let dialogMode = null;
 let dialogAdminMe = "";
+let followCurrent = true;
+let selectedLog = "";
+let lastOverview = null;
+let logCache = { name: "", text: "" };
 
 function text(id, value) {
   document.getElementById(id).textContent = value || "";
@@ -58,9 +62,69 @@ document.querySelectorAll("nav button").forEach((button) => {
   });
 });
 
+function currentLogName(view) {
+  return (view.logs && view.logs.current) || "";
+}
+
+function fillLogSelect(view) {
+  const select = document.getElementById("log-file");
+  const files = (view.logs && view.logs.files) || [];
+  const current = currentLogName(view);
+  if (followCurrent) selectedLog = current;
+  else if (selectedLog && !files.some((file) => file.name === selectedLog)) {
+    followCurrent = true;
+    selectedLog = current;
+  }
+  select.replaceChildren();
+  if (files.length === 0) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "还没有日志";
+    select.appendChild(opt);
+    select.disabled = true;
+    selectedLog = "";
+    return;
+  }
+  select.disabled = false;
+  for (const file of files) {
+    const opt = document.createElement("option");
+    opt.value = file.name;
+    opt.textContent = file.current ? `${file.label}（本轮）` : file.label;
+    select.appendChild(opt);
+  }
+  select.value = selectedLog || files[0].name;
+  selectedLog = select.value;
+}
+
+async function renderLog(view) {
+  fillLogSelect(view);
+  const log = document.getElementById("log");
+  const name = selectedLog;
+  const current = currentLogName(view);
+  if (!name || name === current) {
+    logCache = { name: "", text: "" };
+    log.textContent = (view.log && (view.log.lines.join("\n") || view.log.message)) || "还没有日志";
+    return;
+  }
+  if (logCache.name === name) {
+    log.textContent = logCache.text;
+    return;
+  }
+  try {
+    const body = await api(`/api/logs?name=${encodeURIComponent(name)}`);
+    if (selectedLog !== name) return;
+    logCache = { name, text: (body.lines && body.lines.join("\n")) || body.message || "" };
+    log.textContent = logCache.text;
+  } catch (err) {
+    if (selectedLog !== name) return;
+    if (err.message !== "unauthorized") log.textContent = "日志没有读到。";
+  }
+}
+
 async function refresh() {
   try {
     const view = await api("/api/overview");
+    lastOverview = view;
     const server = view.server;
     text("server-name", server.serverName);
     const next = server.scheduler.nextRunText ? `下次检查 ${server.scheduler.nextRunText}。` : "";
@@ -93,12 +157,20 @@ async function refresh() {
       tr.append(name, status, expiry, apply, actions);
       tbody.appendChild(tr);
     }
-    const log = document.getElementById("log");
-    log.textContent = view.log.lines.join("\n") || view.log.message || "";
+    await renderLog(view);
   } catch (err) {
     if (err.message !== "unauthorized") text("action-message", "状态没有刷新。");
   }
 }
+
+document.getElementById("log-file").addEventListener("change", () => {
+  const select = document.getElementById("log-file");
+  selectedLog = select.value;
+  const current = lastOverview ? currentLogName(lastOverview) : "";
+  followCurrent = !selectedLog || selectedLog === current;
+  logCache = { name: "", text: "" };
+  if (lastOverview) void renderLog(lastOverview);
+});
 
 async function act(path, body) {
   try {
@@ -167,16 +239,149 @@ function jobTitle(id, domains) {
   return list ? `${name} · ${list}` : name;
 }
 
-function openAccordion(item) {
-  document.querySelectorAll("#job-list .accordion.open").forEach((node) => {
-    if (node !== item) node.classList.remove("open");
+function toggleAccordion(item) {
+  const group = item.parentElement;
+  const exclusive = group && group.getAttribute("data-accordion") === "exclusive";
+  const wasOpen = item.classList.contains("open");
+  if (exclusive) {
+    for (const node of group.children) {
+      if (node.classList && node.classList.contains("accordion")) node.classList.remove("open");
+    }
+    if (!wasOpen) item.classList.add("open");
+  } else {
+    item.classList.toggle("open");
+  }
+}
+
+function makeAccordion(titleNode, extras, bodyNodes) {
+  const head = el("button", { type: "button", class: "accordion-head" });
+  const chevron = icon("chevron");
+  chevron.classList.add("chevron");
+  head.append(chevron, titleNode);
+  const bar = el("div", { class: "accordion-bar" }, extras ? [head, ...extras] : [head]);
+  const body = el("div", { class: "accordion-body" }, bodyNodes);
+  const item = el("div", { class: "accordion" }, [bar, body]);
+  head.addEventListener("click", () => toggleAccordion(item));
+  item._title = titleNode;
+  return item;
+}
+
+document.querySelectorAll("[data-accordion-toggle]").forEach((button) => {
+  button.addEventListener("click", () => toggleAccordion(button.closest(".accordion")));
+});
+
+function retitleApplies(list) {
+  let nginx = 0;
+  let cdn = 0;
+  for (const card of list.children) {
+    const summary = card._summary ? card._summary() : "";
+    if (card.dataset.type === "nginx") {
+      nginx += 1;
+      card._title.textContent = summary ? `Nginx ${nginx} · ${summary}` : `Nginx ${nginx}`;
+    } else {
+      cdn += 1;
+      card._title.textContent = summary ? `CDN ${cdn} · ${summary}` : `CDN ${cdn}`;
+    }
+  }
+}
+
+function nginxCard(action, onChange) {
+  const kind = el("select", {}, [
+    el("option", { value: "baota", text: "宝塔" }),
+    el("option", { value: "custom", text: "自装" }),
+  ]);
+  kind.value = action.kind || "baota";
+  const certDir = el("input", { value: action.certDir || "" });
+  const fullchainName = el("input", { value: action.fullchainName || "fullchain.pem" });
+  const privkeyName = el("input", { value: action.privkeyName || "privkey.pem" });
+  const fullchain = el("input", { value: action.fullchainPath || "" });
+  const privkey = el("input", { value: action.privkeyPath || "" });
+  const bin = el("input", { value: action.nginxBin || "" });
+  const baotaDir = field("certDir", certDir);
+  const baotaFull = field("fullchainName", fullchainName);
+  const baotaKey = field("privkeyName", privkeyName);
+  const customFull = field("fullchainPath", fullchain);
+  const customKey = field("privkeyPath", privkey);
+  const title = el("span", { class: "accordion-title", text: "Nginx" });
+
+  function syncKind() {
+    const baotaMode = kind.value === "baota";
+    baotaDir.hidden = !baotaMode;
+    baotaFull.hidden = !baotaMode;
+    baotaKey.hidden = !baotaMode;
+    customFull.hidden = baotaMode;
+    customKey.hidden = baotaMode;
+    onChange();
+  }
+
+  const remove = iconButton("删除", "trash", "ghost");
+  const item = makeAccordion(title, [remove], [
+    field("类型", kind),
+    baotaDir,
+    baotaFull,
+    baotaKey,
+    customFull,
+    customKey,
+    field("nginxBin（宝塔可空，自装必填）", bin),
+  ]);
+  item.dataset.type = "nginx";
+  item._summary = () => (kind.value === "baota" ? certDir.value.trim() : fullchain.value.trim());
+  item._collect = () => {
+    if (kind.value === "baota") {
+      return {
+        type: "nginx",
+        kind: "baota",
+        certDir: certDir.value.trim(),
+        fullchainName: fullchainName.value.trim() || undefined,
+        privkeyName: privkeyName.value.trim() || undefined,
+        nginxBin: bin.value.trim() || undefined,
+      };
+    }
+    return {
+      type: "nginx",
+      kind: "custom",
+      fullchainPath: fullchain.value.trim(),
+      privkeyPath: privkey.value.trim(),
+      nginxBin: bin.value.trim() || undefined,
+    };
+  };
+  remove.addEventListener("click", () => {
+    item.remove();
+    onChange();
   });
-  item.classList.add("open");
+  kind.addEventListener("change", syncKind);
+  certDir.addEventListener("input", onChange);
+  fullchain.addEventListener("input", onChange);
+  syncKind();
+  return item;
+}
+
+function cdnCard(action, onChange) {
+  const domains = el("input", { value: (action.domainNames || []).join(", ") });
+  const title = el("span", { class: "accordion-title", text: "CDN" });
+  const remove = iconButton("删除", "trash", "ghost");
+  const item = makeAccordion(title, [remove], [
+    field("加速域名（逗号分隔）", domains),
+  ]);
+  item.dataset.type = "aliyun-cdn";
+  item._summary = () => domains.value.trim();
+  item._collect = () => ({
+    type: "aliyun-cdn",
+    domainNames: domains.value.split(",").map((part) => part.trim()).filter(Boolean),
+  });
+  remove.addEventListener("click", () => {
+    item.remove();
+    onChange();
+  });
+  domains.addEventListener("input", onChange);
+  return item;
+}
+
+function applyCard(action, onChange) {
+  return action.type === "aliyun-cdn" ? cdnCard(action, onChange) : nginxCard(action, onChange);
 }
 
 function jobCard(job) {
-  let nginx = (job.apply || []).find((item) => item.type === "nginx");
-  let cdn = (job.apply || []).find((item) => item.type === "aliyun-cdn");
   const id = el("input", { value: job.id || "" });
   const enabled = el("input", { type: "checkbox" });
   enabled.checked = job.enabled !== false;
@@ -192,8 +397,20 @@ function jobCard(job) {
   const credential = el("input", { value: job.credential || "", placeholder: "default" });
   const hook = el("input", { value: job.hook?.command || "" });
   const hookWait = el("input", { type: "number", min: "1", value: String(job.hook?.timeoutSeconds ?? 60) });
-  const applyBox = el("div");
   const title = el("span", { class: "accordion-title", text: jobTitle(job.id, (job.domains || []).join(", ")) });
+  const applyList = el("div", { class: "accordion-stack nested" });
+  const zoneField = field("zone", zone);
+  const webrootField = field("webroot", webroot);
+  const waitField = field("DNS 等待秒", wait);
+
+  function syncChallenge() {
+    const dns = challenge.value === "dns-01";
+    zoneField.hidden = !dns;
+    waitField.hidden = !dns;
+    webrootField.hidden = dns;
+  }
+  challenge.addEventListener("change", syncChallenge);
+  syncChallenge();
 
   function syncTitle() {
     title.textContent = jobTitle(id.value, domains.value);
@@ -201,130 +418,59 @@ function jobCard(job) {
   id.addEventListener("input", syncTitle);
   domains.addEventListener("input", syncTitle);
 
-  function redrawApply() {
-    applyBox.replaceChildren();
-    if (nginx) applyBox.appendChild(nginxFields(nginx));
-    if (cdn) applyBox.appendChild(cdnFields(cdn));
+  function refreshApplies() {
+    retitleApplies(applyList);
   }
+
+  for (const action of job.apply || []) applyList.appendChild(applyCard(action, refreshApplies));
+  refreshApplies();
 
   const addNginx = iconButton("Nginx", "plus", "secondary");
   addNginx.addEventListener("click", () => {
-    if (nginx) return;
-    job.apply = job.apply || [];
-    nginx = { type: "nginx", kind: "baota", certDir: "" };
-    job.apply.push(nginx);
-    redrawApply();
+    const card = nginxCard({ type: "nginx", kind: "baota", certDir: "" }, refreshApplies);
+    applyList.appendChild(card);
+    refreshApplies();
+    toggleAccordion(card);
   });
   const addCdn = iconButton("CDN", "plus", "secondary");
   addCdn.addEventListener("click", () => {
-    if (cdn) return;
-    job.apply = job.apply || [];
-    cdn = { type: "aliyun-cdn", domainNames: [] };
-    job.apply.push(cdn);
-    redrawApply();
+    const card = cdnCard({ type: "aliyun-cdn", domainNames: [] }, refreshApplies);
+    applyList.appendChild(card);
+    refreshApplies();
+    toggleAccordion(card);
   });
 
-  const head = el("button", { type: "button", class: "accordion-head" });
-  const chevron = icon("chevron");
-  chevron.classList.add("chevron");
-  head.append(chevron, title);
   const enabledLabel = el("label", { class: "check" }, [enabled, document.createTextNode("启用")]);
-  enabledLabel.addEventListener("click", (event) => event.stopPropagation());
-  const bar = el("div", { class: "accordion-bar" }, [head, enabledLabel]);
-  const body = el("div", { class: "accordion-body" }, [
+  const remove = iconButton("删除任务", "trash", "danger");
+  const item = makeAccordion(title, [enabledLabel], [
     el("div", { class: "grid" }, [
       field("任务 id", id),
       field("域名（逗号分隔）", domains),
       field("校验", challenge),
-      field("zone", zone),
-      field("webroot", webroot),
-      field("DNS 等待秒", wait),
+      zoneField,
+      webrootField,
+      waitField,
       field("凭据名", credential),
       field("签发后命令", hook),
       field("命令超时秒", hookWait),
     ]),
     el("div", { class: "row" }, [addNginx, addCdn]),
-    applyBox,
+    applyList,
+    remove,
   ]);
-  const remove = iconButton("删除任务", "trash", "danger");
-  body.appendChild(remove);
-
-  const item = el("div", { class: "accordion" }, [bar, body]);
-  head.addEventListener("click", () => {
-    if (item.classList.contains("open")) item.classList.remove("open");
-    else openAccordion(item);
-  });
   remove.addEventListener("click", () => item.remove());
-  redrawApply();
-
-  item._collect = () => {
-    const apply = [];
-    if (nginx) {
-      const kind = item.querySelector("[data-nginx-kind]")?.value || nginx.kind;
-      if (kind === "baota") {
-        apply.push({
-          type: "nginx",
-          kind: "baota",
-          certDir: item.querySelector("[data-cert-dir]")?.value.trim() || "",
-          nginxBin: item.querySelector("[data-nginx-bin]")?.value.trim() || undefined,
-        });
-      } else {
-        apply.push({
-          type: "nginx",
-          kind: "custom",
-          fullchainPath: item.querySelector("[data-fullchain]")?.value.trim() || "",
-          privkeyPath: item.querySelector("[data-privkey]")?.value.trim() || "",
-          nginxBin: item.querySelector("[data-nginx-bin]")?.value.trim() || undefined,
-        });
-      }
-    }
-    if (cdn) {
-      apply.push({
-        type: "aliyun-cdn",
-        domainNames: (item.querySelector("[data-cdn-domains]")?.value || "").split(",").map((part) => part.trim()).filter(Boolean),
-      });
-    }
-    return {
-      id: id.value.trim(),
-      enabled: enabled.checked,
-      domains: domains.value.split(",").map((part) => part.trim()).filter(Boolean),
-      challenge: challenge.value === "http-01"
-        ? { type: "http-01", webroot: webroot.value.trim() || undefined }
-        : { type: "dns-01", zone: zone.value.trim(), propagationSeconds: Number(wait.value) || 60 },
-      credential: credential.value.trim() || undefined,
-      apply,
-      hook: hook.value.trim() ? { command: hook.value.trim(), timeoutSeconds: Number(hookWait.value) || 60 } : undefined,
-    };
-  };
+  item._collect = () => ({
+    id: id.value.trim(),
+    enabled: enabled.checked,
+    domains: domains.value.split(",").map((part) => part.trim()).filter(Boolean),
+    challenge: challenge.value === "http-01"
+      ? { type: "http-01", webroot: webroot.value.trim() || undefined }
+      : { type: "dns-01", zone: zone.value.trim(), propagationSeconds: Number(wait.value) || 60 },
+    credential: credential.value.trim() || undefined,
+    apply: [...applyList.children].map((card) => card._collect()),
+    hook: hook.value.trim() ? { command: hook.value.trim(), timeoutSeconds: Number(hookWait.value) || 60 } : undefined,
+  });
   return item;
-}
-
-function nginxFields(action) {
-  const kind = el("select", { "data-nginx-kind": "1" }, [
-    el("option", { value: "baota", text: "宝塔" }),
-    el("option", { value: "custom", text: "自装" }),
-  ]);
-  kind.value = action.kind;
-  const certDir = el("input", { "data-cert-dir": "1", value: action.certDir || "" });
-  const fullchain = el("input", { "data-fullchain": "1", value: action.fullchainPath || "" });
-  const privkey = el("input", { "data-privkey": "1", value: action.privkeyPath || "" });
-  const bin = el("input", { "data-nginx-bin": "1", value: action.nginxBin || "" });
-  const box = el("div", { class: "job" }, [
-    el("strong", { text: "Nginx" }),
-    field("类型", kind),
-    field("certDir", certDir),
-    field("fullchainPath", fullchain),
-    field("privkeyPath", privkey),
-    field("nginxBin（可空）", bin),
-  ]);
-  return box;
-}
-
-function cdnFields(action) {
-  return el("div", { class: "job" }, [
-    el("strong", { text: "阿里云 CDN" }),
-    field("加速域名（逗号分隔）", el("input", { "data-cdn-domains": "1", value: (action.domainNames || []).join(", ") })),
-  ]);
 }
 
 async function loadJobs() {
@@ -340,8 +486,8 @@ async function loadJobs() {
     document.getElementById("regionId").value = config.alibaba.regionId || "";
     document.getElementById("hours").value = (config.schedule.hours || []).join(",");
     renderJobs(config.jobs || []);
-    const first = document.querySelector("#job-list .accordion");
-    if (first) openAccordion(first);
+    const first = document.querySelector("#job-list > .accordion");
+    if (first) toggleAccordion(first);
     message.textContent = body.invalidJobs?.length ? `有 ${body.invalidJobs.length} 条任务不合法，表单里看不到它们。` : "";
   } catch (err) {
     message.textContent = err.message;
@@ -358,8 +504,8 @@ document.getElementById("add-job").addEventListener("click", () => {
   const jobs = collectJobs();
   jobs.push(emptyJob());
   renderJobs(jobs);
-  const last = document.querySelector("#job-list .accordion:last-child");
-  if (last) openAccordion(last);
+  const last = document.querySelector("#job-list > .accordion:last-child");
+  if (last) toggleAccordion(last);
 });
 
 document.getElementById("save-jobs").addEventListener("click", async () => {

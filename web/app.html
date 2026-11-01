@@ -72,47 +72,78 @@
           </table>
         </div>
       </div>
-      <h2>最近日志</h2>
+      <div class="log-head">
+        <h2>日志</h2>
+        <div class="log-toolbar">
+          <label for="log-file">查看</label>
+          <select id="log-file"></select>
+        </div>
+      </div>
+      <p class="muted">每轮一个文件。选更早的一轮可看当时的记录；选带「本轮」的会跟着最新文件走。每份只显示末尾约 200 行。</p>
       <pre id="log" class="log"></pre>
     </section>
 
     <section id="jobs" class="panel">
       <div class="card">
-        <p>保存后写回本机 <code>config.yaml</code>。表单保存会重排 YAML，注释不会保留。签发后钩子是任意 shell，由续签进程执行。点任务标题展开或收起。</p>
+        <p>保存后写回本机 <code>config.yaml</code>。表单保存会重排 YAML，注释不会保留。签发后钩子是任意 shell，由续签进程执行。一条任务可以添加多条 Nginx 和 CDN。</p>
         <p id="jobs-message" class="note"></p>
-        <div class="grid">
-          <div>
-            <label for="serverName">机器名</label>
-            <input id="serverName">
+        <div class="accordion-stack">
+          <div class="accordion open" id="global-block">
+            <div class="accordion-bar">
+              <button type="button" class="accordion-head" data-accordion-toggle>
+                <svg class="icon chevron"><use href="#i-chevron"/></svg>
+                <span class="accordion-title">全局配置</span>
+              </button>
+            </div>
+            <div class="accordion-body">
+              <div class="grid">
+                <div>
+                  <label for="serverName">机器名</label>
+                  <input id="serverName">
+                </div>
+                <div>
+                  <label for="email">Let’s Encrypt 邮箱</label>
+                  <input id="email">
+                </div>
+                <div>
+                  <label for="regionId">阿里云地域</label>
+                  <input id="regionId">
+                </div>
+                <div>
+                  <label for="hours">检查小时（逗号分隔）</label>
+                  <input id="hours" placeholder="3,15">
+                </div>
+                <div>
+                  <label for="renewBeforeDays">提前续签天数</label>
+                  <input id="renewBeforeDays" type="number" min="1">
+                </div>
+                <div>
+                  <label for="keyType">私钥类型</label>
+                  <select id="keyType">
+                    <option value="ecdsa">ecdsa</option>
+                    <option value="rsa">rsa</option>
+                  </select>
+                </div>
+              </div>
+              <label class="check"><input id="staging" type="checkbox"> Let’s Encrypt 测试环境</label>
+            </div>
           </div>
-          <div>
-            <label for="email">Let’s Encrypt 邮箱</label>
-            <input id="email">
-          </div>
-          <div>
-            <label for="regionId">阿里云地域</label>
-            <input id="regionId">
-          </div>
-          <div>
-            <label for="hours">检查小时（逗号分隔）</label>
-            <input id="hours" placeholder="3,15">
-          </div>
-          <div>
-            <label for="renewBeforeDays">提前续签天数</label>
-            <input id="renewBeforeDays" type="number" min="1">
-          </div>
-          <div>
-            <label for="keyType">私钥类型</label>
-            <select id="keyType">
-              <option value="ecdsa">ecdsa</option>
-              <option value="rsa">rsa</option>
-            </select>
+          <div class="accordion open" id="jobs-block">
+            <div class="accordion-bar">
+              <button type="button" class="accordion-head" data-accordion-toggle>
+                <svg class="icon chevron"><use href="#i-chevron"/></svg>
+                <span class="accordion-title">任务</span>
+              </button>
+            </div>
+            <div class="accordion-body">
+              <div id="job-list" class="accordion-stack nested" data-accordion="exclusive"></div>
+              <div class="actions">
+                <button id="add-job" type="button" class="secondary"><svg class="icon"><use href="#i-plus"/></svg>添加任务</button>
+              </div>
+            </div>
           </div>
         </div>
-        <label class="check"><input id="staging" type="checkbox"> Let’s Encrypt 测试环境</label>
-        <div id="job-list"></div>
         <div class="actions">
-          <button id="add-job" type="button" class="secondary"><svg class="icon"><use href="#i-plus"/></svg>添加任务</button>
           <button id="save-jobs" type="button"><svg class="icon"><use href="#i-save"/></svg>保存任务配置</button>
         </div>
       </div>

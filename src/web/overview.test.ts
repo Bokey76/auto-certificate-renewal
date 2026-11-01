@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { writeScheduler } from "../schedule/control.js";
-import { loadOverview, readLogTail } from "./overview.js";
+import { listLogFiles, loadOverview, readLogByName, readLogTail } from "./overview.js";
 
 const now = new Date("2026-10-30T03:00:00.000Z");
 const zone = "Asia/Shanghai";
@@ -104,6 +104,10 @@ jobs:
   assert.equal(view.server.jobs[2].inConfig, false);
   assert.match(view.server.jobs[2].statusText, /配置里已没有/);
   assert.equal(view.log.lines.length, 1);
+  assert.equal(view.log.name, "round.log");
+  assert.equal(view.logs.current, "round.log");
+  assert.equal(view.logs.files[0].name, "round.log");
+  assert.equal(view.logs.files[0].current, true);
   const dumped = JSON.stringify(view);
   assert.equal(dumped.includes("SECRETPEM"), false);
   assert.equal(dumped.includes("prod"), false);
@@ -135,6 +139,8 @@ jobs:
   assert.equal(view.server.jobs[0].status, "absent");
   assert.equal(view.server.jobs[0].cdn[0].text, "尚未绑定");
   assert.equal(view.log.message, "还没有日志");
+  assert.equal(view.logs.current, null);
+  assert.equal(view.logs.files.length, 0);
 });
 
 test("配置读不了时任务表为空", () => {
@@ -158,4 +164,70 @@ test("日志路径逃出 logs 目录时不读取", () => {
 
   const missing = readLogTail(data, join(data, "logs", "gone.log"));
   assert.equal(missing.message, "日志文件不在");
+});
+
+test("日志列表按文件名新到旧，按名字读历史文件，不能逃出 logs", () => {
+  const data = mkdtempSync(join(tmpdir(), "overview-logs-"));
+  mkdirSync(join(data, "logs"));
+  mkdirSync(join(data, "logs", "subdir.log"));
+  writeFileSync(join(data, "logs", "2026-10-30T02-00-00.000Z.log"), "older-round\n", "utf8");
+  writeFileSync(join(data, "logs", "2026-10-30T03-00-00.000Z.log"), "current-round\n", "utf8");
+  writeFileSync(join(data, "logs", "notes.txt"), "not-a-log\n", "utf8");
+  writeFileSync(join(data, "secret.txt"), "SECRETLOG\n", "utf8");
+
+  const files = listLogFiles(data, "2026-10-30T03-00-00.000Z.log", zone);
+  assert.deepEqual(files.map((file) => file.name), [
+    "2026-10-30T03-00-00.000Z.log",
+    "2026-10-30T02-00-00.000Z.log",
+  ]);
+  assert.equal(files[0].current, true);
+  assert.equal(files[1].current, false);
+  assert.match(files[0].label, /2026/);
+
+  const older = readLogByName(data, "2026-10-30T02-00-00.000Z.log");
+  assert.equal(older.name, "2026-10-30T02-00-00.000Z.log");
+  assert.deepEqual(older.lines, ["older-round"]);
+
+  const escaped = readLogByName(data, "../secret.txt");
+  assert.equal(escaped.message, "日志路径不合法");
+  assert.equal(escaped.lines.length, 0);
+  assert.equal(JSON.stringify(escaped).includes("SECRETLOG"), false);
+
+  const nested = readLogByName(data, "foo/bar.log");
+  assert.equal(nested.message, "日志路径不合法");
+
+  const dir = readLogByName(data, "subdir.log");
+  assert.equal(dir.message, "日志路径不合法");
+});
+
+test("status.json 里的日志路径不在本机时仍按文件名读 logs", () => {
+  const data = mkdtempSync(join(tmpdir(), "overview-logpath-"));
+  const configPath = join(data, "config.yaml");
+  writeFileSync(
+    configPath,
+    `serverName: origin-a
+letsencrypt:
+  email: ops@example.com
+jobs: []
+`,
+    "utf8",
+  );
+  mkdirSync(join(data, "logs"));
+  writeFileSync(join(data, "logs", "round.log"), "from-mount\n", "utf8");
+  writeFileSync(
+    join(data, "status.json"),
+    JSON.stringify({
+      serverName: "origin-a",
+      startedAt: "2026-10-30T02:00:00.000Z",
+      finishedAt: "2026-10-30T02:01:00.000Z",
+      exitCode: 0,
+      logPath: "/var/lib/acme/logs/round.log",
+      jobs: [],
+    }),
+    "utf8",
+  );
+  const view = loadOverview({ dataDir: data, configPath, now, timeZone: zone });
+  assert.equal(view.logs.current, "round.log");
+  assert.deepEqual(view.log.lines, ["from-mount"]);
+  assert.equal(view.log.name, "round.log");
 });
