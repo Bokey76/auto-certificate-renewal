@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { createAliyunClients } from "./aliyun.js";
+import { createAliyunClients } from "./renew/aliyun.js";
 
 const cli = fileURLToPath(new URL("./cli.js", import.meta.url));
 

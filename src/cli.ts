@@ -4,16 +4,16 @@ import { mkdirSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createAliyunClients } from "./aliyun.js";
-import { loadConfig } from "./config.js";
-import { dnsAuth, dnsCleanup } from "./dns-hook.js";
-import { loadDotEnv } from "./env.js";
-import { spawnExec } from "./exec.js";
-import { createLogger } from "./log.js";
-import { runAll } from "./runner.js";
-import { DEFAULT_SCHEDULE_HOURS, randomOffsetMinutes, sleep } from "./schedule.js";
-import { runScheduleLoop, volumeControl } from "./schedule-loop.js";
-import { startWeb } from "./web.js";
+import { loadConfig } from "./config/config.js";
+import { loadDotEnv } from "./config/env.js";
+import { spawnExec } from "./lib/exec.js";
+import { createLogger } from "./lib/log.js";
+import { createAliyunClients } from "./renew/aliyun.js";
+import { dnsAuth, dnsCleanup } from "./renew/dns-hook.js";
+import { runAll } from "./renew/runner.js";
+import { DEFAULT_SCHEDULE_HOURS, randomOffsetMinutes, sleep } from "./schedule/schedule.js";
+import { runScheduleLoop, volumeControl } from "./schedule/schedule-loop.js";
+import { startWeb } from "./web/web.js";
 
 loadDotEnv(resolve(process.cwd(), ".env"));
 

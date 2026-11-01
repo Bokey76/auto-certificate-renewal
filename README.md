@@ -134,9 +134,7 @@ ssl_certificate_key  /www/server/panel/vhost/cert/example.com/privkey.pem;
 
 ## 状态网页
 
-同一台机器上还有一个 `web` 容器，打开 `http://127.0.0.1:8787`。第一次打开会创建管理员（口令至少 12 位），账号写在 `config/admins.json`。之后可在网页里加人。
-
-页面可以：看最近一轮和日志末尾；用表单或 YAML 改 `config.yaml`；填写阿里云凭据；立即检查、只跑一条、演练、强制续签、暂停或恢复定时检查。立即检查仍受 `renewBeforeDays` 约束，勾选强制续签才会忽略窗口。网页不显示私钥和 AccessKey。服务器上的打开方式见 [docs/使用.md](docs/使用.md)。
+同一台机器上还有一个 `web` 容器，打开 `http://127.0.0.1:8787`。第一次打开会创建管理员。页面可以看状态、改配置、跑检查。打开方式、标签说明和与命令行的对照见 [docs/web.md](docs/web.md)。
 
 ## 确认是否生效
 
