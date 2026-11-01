@@ -5,8 +5,28 @@
  */
 const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
 
+let dialogMode = null;
+let dialogAdminMe = "";
+
 function text(id, value) {
   document.getElementById(id).textContent = value || "";
+}
+
+function icon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "icon");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#i-${name}`);
+  svg.appendChild(use);
+  return svg;
+}
+
+function iconButton(label, name, className) {
+  const button = document.createElement("button");
+  button.type = "button";
+  if (className) button.className = className;
+  button.append(icon(name), document.createTextNode(label));
+  return button;
 }
 
 async function api(path, options) {
@@ -66,9 +86,8 @@ async function refresh() {
       for (const item of job.cdn) parts.push(`${item.domain} ${item.text}`);
       apply.textContent = parts.join("；");
       const actions = document.createElement("td");
-      const runOne = document.createElement("button");
-      runOne.type = "button";
-      runOne.textContent = "跑这一条";
+      actions.className = "row-actions";
+      const runOne = iconButton("跑这一条", "play");
       runOne.addEventListener("click", () => act("/api/run", { jobId: job.id }));
       actions.appendChild(runOne);
       tr.append(name, status, expiry, apply, actions);
@@ -142,205 +161,205 @@ function field(labelText, control) {
   return wrap;
 }
 
-function input(value, attrs) {
-  const node = document.createElement("input");
-  if (attrs) Object.entries(attrs).forEach(([key, val]) => node.setAttribute(key, val));
-  node.value = value == null ? "" : String(value);
-  return node;
+function jobTitle(id, domains) {
+  const name = (id || "").trim() || "新任务";
+  const list = (domains || "").trim();
+  return list ? `${name} · ${list}` : name;
 }
 
-let jobState = { serverName: "", letsencrypt: {}, alibaba: {}, schedule: {}, jobs: [] };
+function openAccordion(item) {
+  document.querySelectorAll("#job-list .accordion.open").forEach((node) => {
+    if (node !== item) node.classList.remove("open");
+  });
+  item.classList.add("open");
+}
+
+function jobCard(job) {
+  let nginx = (job.apply || []).find((item) => item.type === "nginx");
+  let cdn = (job.apply || []).find((item) => item.type === "aliyun-cdn");
+  const id = el("input", { value: job.id || "" });
+  const enabled = el("input", { type: "checkbox" });
+  enabled.checked = job.enabled !== false;
+  const domains = el("input", { value: (job.domains || []).join(", ") });
+  const challenge = el("select", {}, [
+    el("option", { value: "dns-01", text: "dns-01" }),
+    el("option", { value: "http-01", text: "http-01" }),
+  ]);
+  challenge.value = job.challenge?.type || "dns-01";
+  const zone = el("input", { value: job.challenge?.zone || "" });
+  const webroot = el("input", { value: job.challenge?.webroot || "" });
+  const wait = el("input", { type: "number", min: "1", value: String(job.challenge?.propagationSeconds ?? 60) });
+  const credential = el("input", { value: job.credential || "", placeholder: "default" });
+  const hook = el("input", { value: job.hook?.command || "" });
+  const hookWait = el("input", { type: "number", min: "1", value: String(job.hook?.timeoutSeconds ?? 60) });
+  const applyBox = el("div");
+  const title = el("span", { class: "accordion-title", text: jobTitle(job.id, (job.domains || []).join(", ")) });
+
+  function syncTitle() {
+    title.textContent = jobTitle(id.value, domains.value);
+  }
+  id.addEventListener("input", syncTitle);
+  domains.addEventListener("input", syncTitle);
+
+  function redrawApply() {
+    applyBox.replaceChildren();
+    if (nginx) applyBox.appendChild(nginxFields(nginx));
+    if (cdn) applyBox.appendChild(cdnFields(cdn));
+  }
+
+  const addNginx = iconButton("Nginx", "plus", "secondary");
+  addNginx.addEventListener("click", () => {
+    if (nginx) return;
+    job.apply = job.apply || [];
+    nginx = { type: "nginx", kind: "baota", certDir: "" };
+    job.apply.push(nginx);
+    redrawApply();
+  });
+  const addCdn = iconButton("CDN", "plus", "secondary");
+  addCdn.addEventListener("click", () => {
+    if (cdn) return;
+    job.apply = job.apply || [];
+    cdn = { type: "aliyun-cdn", domainNames: [] };
+    job.apply.push(cdn);
+    redrawApply();
+  });
+
+  const head = el("button", { type: "button", class: "accordion-head" });
+  const chevron = icon("chevron");
+  chevron.classList.add("chevron");
+  head.append(chevron, title);
+  const enabledLabel = el("label", { class: "check" }, [enabled, document.createTextNode("启用")]);
+  enabledLabel.addEventListener("click", (event) => event.stopPropagation());
+  const bar = el("div", { class: "accordion-bar" }, [head, enabledLabel]);
+  const body = el("div", { class: "accordion-body" }, [
+    el("div", { class: "grid" }, [
+      field("任务 id", id),
+      field("域名（逗号分隔）", domains),
+      field("校验", challenge),
+      field("zone", zone),
+      field("webroot", webroot),
+      field("DNS 等待秒", wait),
+      field("凭据名", credential),
+      field("签发后命令", hook),
+      field("命令超时秒", hookWait),
+    ]),
+    el("div", { class: "row" }, [addNginx, addCdn]),
+    applyBox,
+  ]);
+  const remove = iconButton("删除任务", "trash", "danger");
+  body.appendChild(remove);
+
+  const item = el("div", { class: "accordion" }, [bar, body]);
+  head.addEventListener("click", () => {
+    if (item.classList.contains("open")) item.classList.remove("open");
+    else openAccordion(item);
+  });
+  remove.addEventListener("click", () => item.remove());
+  redrawApply();
+
+  item._collect = () => {
+    const apply = [];
+    if (nginx) {
+      const kind = item.querySelector("[data-nginx-kind]")?.value || nginx.kind;
+      if (kind === "baota") {
+        apply.push({
+          type: "nginx",
+          kind: "baota",
+          certDir: item.querySelector("[data-cert-dir]")?.value.trim() || "",
+          nginxBin: item.querySelector("[data-nginx-bin]")?.value.trim() || undefined,
+        });
+      } else {
+        apply.push({
+          type: "nginx",
+          kind: "custom",
+          fullchainPath: item.querySelector("[data-fullchain]")?.value.trim() || "",
+          privkeyPath: item.querySelector("[data-privkey]")?.value.trim() || "",
+          nginxBin: item.querySelector("[data-nginx-bin]")?.value.trim() || undefined,
+        });
+      }
+    }
+    if (cdn) {
+      apply.push({
+        type: "aliyun-cdn",
+        domainNames: (item.querySelector("[data-cdn-domains]")?.value || "").split(",").map((part) => part.trim()).filter(Boolean),
+      });
+    }
+    return {
+      id: id.value.trim(),
+      enabled: enabled.checked,
+      domains: domains.value.split(",").map((part) => part.trim()).filter(Boolean),
+      challenge: challenge.value === "http-01"
+        ? { type: "http-01", webroot: webroot.value.trim() || undefined }
+        : { type: "dns-01", zone: zone.value.trim(), propagationSeconds: Number(wait.value) || 60 },
+      credential: credential.value.trim() || undefined,
+      apply,
+      hook: hook.value.trim() ? { command: hook.value.trim(), timeoutSeconds: Number(hookWait.value) || 60 } : undefined,
+    };
+  };
+  return item;
+}
+
+function nginxFields(action) {
+  const kind = el("select", { "data-nginx-kind": "1" }, [
+    el("option", { value: "baota", text: "宝塔" }),
+    el("option", { value: "custom", text: "自装" }),
+  ]);
+  kind.value = action.kind;
+  const certDir = el("input", { "data-cert-dir": "1", value: action.certDir || "" });
+  const fullchain = el("input", { "data-fullchain": "1", value: action.fullchainPath || "" });
+  const privkey = el("input", { "data-privkey": "1", value: action.privkeyPath || "" });
+  const bin = el("input", { "data-nginx-bin": "1", value: action.nginxBin || "" });
+  const box = el("div", { class: "job" }, [
+    el("strong", { text: "Nginx" }),
+    field("类型", kind),
+    field("certDir", certDir),
+    field("fullchainPath", fullchain),
+    field("privkeyPath", privkey),
+    field("nginxBin（可空）", bin),
+  ]);
+  return box;
+}
+
+function cdnFields(action) {
+  return el("div", { class: "job" }, [
+    el("strong", { text: "阿里云 CDN" }),
+    field("加速域名（逗号分隔）", el("input", { "data-cdn-domains": "1", value: (action.domainNames || []).join(", ") })),
+  ]);
+}
 
 async function loadJobs() {
   const message = document.getElementById("jobs-message");
   try {
     const body = await api("/api/config");
-    if (!body.ok) {
-      message.textContent = body.error || "配置读不了";
-      return;
-    }
-    jobState = body.config;
-    if (!Array.isArray(jobState.jobs)) jobState.jobs = [];
-    fillRoot();
-    renderJobs();
-    message.textContent = body.invalidJobs && body.invalidJobs.length
-      ? body.invalidJobs.map((item) => item.error).join("；")
-      : "";
+    const config = body.config;
+    document.getElementById("serverName").value = config.serverName || "";
+    document.getElementById("email").value = config.letsencrypt.email || "";
+    document.getElementById("staging").checked = Boolean(config.letsencrypt.staging);
+    document.getElementById("renewBeforeDays").value = config.letsencrypt.renewBeforeDays;
+    document.getElementById("keyType").value = config.letsencrypt.keyType;
+    document.getElementById("regionId").value = config.alibaba.regionId || "";
+    document.getElementById("hours").value = (config.schedule.hours || []).join(",");
+    renderJobs(config.jobs || []);
+    const first = document.querySelector("#job-list .accordion");
+    if (first) openAccordion(first);
+    message.textContent = body.invalidJobs?.length ? `有 ${body.invalidJobs.length} 条任务不合法，表单里看不到它们。` : "";
   } catch (err) {
     message.textContent = err.message;
   }
 }
 
-function fillRoot() {
-  document.getElementById("serverName").value = jobState.serverName || "";
-  document.getElementById("email").value = (jobState.letsencrypt && jobState.letsencrypt.email) || "";
-  document.getElementById("regionId").value = (jobState.alibaba && jobState.alibaba.regionId) || "";
-  document.getElementById("hours").value = ((jobState.schedule && jobState.schedule.hours) || []).join(",");
-  document.getElementById("renewBeforeDays").value = (jobState.letsencrypt && jobState.letsencrypt.renewBeforeDays) || 30;
-  document.getElementById("keyType").value = (jobState.letsencrypt && jobState.letsencrypt.keyType) || "ecdsa";
-  document.getElementById("staging").checked = Boolean(jobState.letsencrypt && jobState.letsencrypt.staging);
-}
-
-function collectRoot() {
-  const hours = document.getElementById("hours").value.split(",").map((item) => Number(item.trim())).filter((item) => Number.isInteger(item) && item >= 0 && item <= 23);
-  return {
-    serverName: document.getElementById("serverName").value.trim() || undefined,
-    letsencrypt: {
-      email: document.getElementById("email").value.trim(),
-      staging: document.getElementById("staging").checked,
-      renewBeforeDays: Number(document.getElementById("renewBeforeDays").value),
-      keyType: document.getElementById("keyType").value,
-    },
-    alibaba: { regionId: document.getElementById("regionId").value.trim() },
-    schedule: { hours },
-    jobs: collectJobs(),
-  };
-}
-
-function renderJobs() {
+function renderJobs(jobs) {
   const list = document.getElementById("job-list");
   list.replaceChildren();
-  jobState.jobs.forEach((job, index) => list.appendChild(jobCard(job, index)));
-}
-
-function jobCard(job, index) {
-  const card = el("div", { class: "job" });
-  const id = input(job.id);
-  id.dataset.field = "id";
-  const enabled = input("", { type: "checkbox" });
-  enabled.checked = job.enabled !== false;
-  const domains = document.createElement("textarea");
-  domains.value = (job.domains || []).join("\n");
-  const type = document.createElement("select");
-  type.append(new Option("dns-01", "dns-01"), new Option("http-01", "http-01"));
-  type.value = job.challenge && job.challenge.type === "http-01" ? "http-01" : "dns-01";
-  const zone = input(job.challenge && job.challenge.zone);
-  const webroot = input((job.challenge && job.challenge.webroot) || "/var/www/acme");
-  const propagation = input(job.challenge && job.challenge.propagationSeconds != null ? job.challenge.propagationSeconds : 60, { type: "number" });
-  const credential = input(job.credential || "");
-  const hookOn = input("", { type: "checkbox" });
-  hookOn.checked = Boolean(job.hook);
-  const hookCmd = input(job.hook && job.hook.command);
-  const hookTimeout = input((job.hook && job.hook.timeoutSeconds) || 60, { type: "number" });
-  const applyBox = el("div");
-  function renderApply() {
-    applyBox.replaceChildren();
-    (job.apply || []).forEach((action, actionIndex) => {
-      applyBox.appendChild(actionCard(job, action, actionIndex, renderApply));
-    });
-  }
-  renderApply();
-  const addNginx = el("button", { type: "button", class: "secondary", text: "添加宝塔 Nginx" });
-  addNginx.addEventListener("click", () => {
-    job.apply = job.apply || [];
-    job.apply.push({ type: "nginx", kind: "baota", certDir: "" });
-    renderApply();
-  });
-  const addCustom = el("button", { type: "button", class: "secondary", text: "添加自装 Nginx" });
-  addCustom.addEventListener("click", () => {
-    job.apply = job.apply || [];
-    job.apply.push({ type: "nginx", kind: "custom", fullchainPath: "", privkeyPath: "", nginxBin: "/usr/sbin/nginx" });
-    renderApply();
-  });
-  const addCdn = el("button", { type: "button", class: "secondary", text: "添加 CDN" });
-  addCdn.addEventListener("click", () => {
-    job.apply = job.apply || [];
-    job.apply.push({ type: "aliyun-cdn", domainNames: [] });
-    renderApply();
-  });
-  const remove = el("button", { type: "button", class: "danger", text: "删除任务" });
-  remove.addEventListener("click", () => {
-    jobState.jobs.splice(index, 1);
-    renderJobs();
-  });
-  card.append(
-    field("任务 id", id),
-    el("label", { class: "check" }, [enabled, document.createTextNode(" 启用")]),
-    field("域名（一行一个）", domains),
-    field("校验方式", type),
-    field("DNS zone", zone),
-    field("HTTP webroot", webroot),
-    field("DNS 传播秒数", propagation),
-    field("凭据名（空为 default）", credential),
-    el("label", { class: "check" }, [hookOn, document.createTextNode(" 签发后钩子（任意 shell）")]),
-    field("钩子命令", hookCmd),
-    field("钩子超时秒", hookTimeout),
-    applyBox,
-    el("div", { class: "actions" }, [addNginx, addCustom, addCdn, remove]),
-  );
-  card._collect = () => {
-    const challenge = type.value === "http-01"
-      ? { type: "http-01", webroot: webroot.value.trim() }
-      : { type: "dns-01", zone: zone.value.trim(), propagationSeconds: Number(propagation.value) };
-    const collected = {
-      id: id.value.trim(),
-      enabled: enabled.checked,
-      domains: domains.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
-      challenge,
-      apply: (job.apply || []).map((action, actionIndex) => actionCardCollect(applyBox, action, actionIndex)),
-    };
-    if (credential.value.trim()) collected.credential = credential.value.trim();
-    if (hookOn.checked) collected.hook = { command: hookCmd.value, timeoutSeconds: Number(hookTimeout.value) };
-    return collected;
-  };
-  return card;
-}
-
-function actionCard(job, action, actionIndex, rerender) {
-  const box = el("div", { class: "job" });
-  const remove = el("button", { type: "button", class: "danger", text: "删除动作" });
-  remove.addEventListener("click", () => {
-    job.apply.splice(actionIndex, 1);
-    rerender();
-  });
-  if (action.type === "aliyun-cdn") {
-    const domains = document.createElement("textarea");
-    domains.value = (action.domainNames || []).join("\n");
-    domains.dataset.kind = "cdn";
-    box.append(el("p", { text: "阿里云 CDN" }), field("加速域名（一行一个）", domains), remove);
-    return box;
-  }
-  if (action.kind === "custom") {
-    const fullchain = input(action.fullchainPath || "");
-    const privkey = input(action.privkeyPath || "");
-    const bin = input(action.nginxBin || "/usr/sbin/nginx");
-    fullchain.dataset.kind = "fullchain";
-    privkey.dataset.kind = "privkey";
-    bin.dataset.kind = "bin";
-    box.append(el("p", { text: "自装 Nginx" }), field("fullchainPath", fullchain), field("privkeyPath", privkey), field("nginxBin", bin), remove);
-    return box;
-  }
-  const certDir = input(action.certDir || "");
-  certDir.dataset.kind = "certDir";
-  box.append(el("p", { text: "宝塔 Nginx" }), field("certDir", certDir), remove);
-  return box;
-}
-
-function actionCardCollect(applyBox, action, actionIndex) {
-  const box = applyBox.children[actionIndex];
-  if (action.type === "aliyun-cdn") {
-    const domains = box.querySelector("textarea");
-    return { type: "aliyun-cdn", domainNames: domains.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) };
-  }
-  if (action.kind === "custom") {
-    return {
-      type: "nginx",
-      kind: "custom",
-      fullchainPath: box.querySelector('[data-kind="fullchain"]').value.trim(),
-      privkeyPath: box.querySelector('[data-kind="privkey"]').value.trim(),
-      nginxBin: box.querySelector('[data-kind="bin"]').value.trim(),
-    };
-  }
-  return { type: "nginx", kind: "baota", certDir: box.querySelector('[data-kind="certDir"]').value.trim() };
-}
-
-function collectJobs() {
-  return [...document.getElementById("job-list").children].map((card) => card._collect());
+  jobs.forEach((job) => list.appendChild(jobCard(job)));
 }
 
 document.getElementById("add-job").addEventListener("click", () => {
-  jobState.jobs.push(emptyJob());
-  renderJobs();
+  const jobs = collectJobs();
+  jobs.push(emptyJob());
+  renderJobs(jobs);
+  const last = document.querySelector("#job-list .accordion:last-child");
+  if (last) openAccordion(last);
 });
 
 document.getElementById("save-jobs").addEventListener("click", async () => {
@@ -349,21 +368,40 @@ document.getElementById("save-jobs").addEventListener("click", async () => {
     await api("/api/config", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(collectRoot()),
+      body: JSON.stringify({
+        serverName: document.getElementById("serverName").value.trim(),
+        letsencrypt: {
+          email: document.getElementById("email").value.trim(),
+          staging: document.getElementById("staging").checked,
+          renewBeforeDays: Number(document.getElementById("renewBeforeDays").value),
+          keyType: document.getElementById("keyType").value,
+        },
+        alibaba: { regionId: document.getElementById("regionId").value.trim() },
+        schedule: {
+          hours: document.getElementById("hours").value.split(",").map((part) => Number(part.trim())).filter((n) => Number.isInteger(n)),
+        },
+        jobs: collectJobs(),
+      }),
     });
     message.textContent = "已保存";
     await loadJobs();
   } catch (err) {
-    message.textContent = err.message;
+    message.textContent = err.body && err.body.invalidJobs
+      ? err.body.invalidJobs.map((item) => item.error).join("；")
+      : err.message;
   }
 });
+
+function collectJobs() {
+  return [...document.getElementById("job-list").children].map((card) => card._collect());
+}
 
 async function loadYaml() {
   const message = document.getElementById("yaml-message");
   try {
     const body = await api("/api/config/raw");
     document.getElementById("yaml-text").value = body.text || "";
-    message.textContent = "";
+    message.textContent = body.text ? "" : "还没有配置文件。";
   } catch (err) {
     message.textContent = err.message;
   }
@@ -384,6 +422,127 @@ document.getElementById("save-yaml").addEventListener("click", async () => {
   }
 });
 
+function closeDialog() {
+  document.getElementById("dialog").hidden = true;
+  dialogMode = null;
+  document.getElementById("dialog-error").textContent = "";
+}
+
+function showDialog(mode, title) {
+  dialogMode = mode;
+  document.getElementById("dialog-title").textContent = title;
+  document.getElementById("dialog-error").textContent = "";
+  document.getElementById("dialog-cred").classList.toggle("active", mode.startsWith("cred"));
+  document.getElementById("dialog-admin").classList.toggle("active", mode.startsWith("admin"));
+  document.getElementById("dialog").hidden = false;
+  const first = mode.startsWith("cred")
+    ? document.getElementById("dialog-cred-name")
+    : document.getElementById("dialog-admin-name");
+  if (!first.disabled) first.focus();
+  else if (mode.startsWith("cred")) document.getElementById("dialog-cred-id").focus();
+  else document.getElementById("dialog-admin-password").focus();
+}
+
+function openCredDialog(item) {
+  const name = document.getElementById("dialog-cred-name");
+  const id = document.getElementById("dialog-cred-id");
+  const secret = document.getElementById("dialog-cred-secret");
+  id.value = "";
+  secret.value = "";
+  if (item) {
+    name.value = item.name;
+    name.disabled = true;
+    text("dialog-cred-hint", "密钥不会回显。填写后覆盖文件里已保存的值。");
+    showDialog("cred-edit", "编辑凭据");
+  } else {
+    name.value = "";
+    name.disabled = false;
+    text("dialog-cred-hint", "");
+    showDialog("cred-create", "创建凭据");
+  }
+}
+
+function openAdminDialog(user, me) {
+  dialogAdminMe = me;
+  const name = document.getElementById("dialog-admin-name");
+  const currentWrap = document.getElementById("dialog-admin-current-wrap");
+  const current = document.getElementById("dialog-admin-current");
+  const password = document.getElementById("dialog-admin-password");
+  current.value = "";
+  password.value = "";
+  if (user) {
+    name.value = user.username;
+    name.disabled = true;
+    const self = user.username === me;
+    currentWrap.hidden = !self;
+    showDialog("admin-edit", self ? "修改我的口令" : "重设口令");
+  } else {
+    name.value = "";
+    name.disabled = false;
+    currentWrap.hidden = true;
+    showDialog("admin-create", "创建管理员");
+  }
+}
+
+document.getElementById("dialog-cancel").addEventListener("click", closeDialog);
+document.getElementById("dialog-backdrop").addEventListener("click", closeDialog);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !document.getElementById("dialog").hidden) closeDialog();
+});
+
+document.getElementById("dialog-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const error = document.getElementById("dialog-error");
+  error.textContent = "";
+  try {
+    if (dialogMode === "cred-create" || dialogMode === "cred-edit") {
+      await api("/api/credentials", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: document.getElementById("dialog-cred-name").value.trim() || "default",
+          accessKeyId: document.getElementById("dialog-cred-id").value,
+          accessKeySecret: document.getElementById("dialog-cred-secret").value,
+        }),
+      });
+      closeDialog();
+      text("cred-message", "已保存");
+      await loadCredentials();
+      return;
+    }
+    if (dialogMode === "admin-create") {
+      await api("/api/admins", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          username: document.getElementById("dialog-admin-name").value.trim(),
+          password: document.getElementById("dialog-admin-password").value,
+        }),
+      });
+      closeDialog();
+      text("admins-message", "已添加");
+      await loadAdmins();
+      return;
+    }
+    if (dialogMode === "admin-edit") {
+      const username = document.getElementById("dialog-admin-name").value.trim();
+      const payload = { newPassword: document.getElementById("dialog-admin-password").value };
+      if (username === dialogAdminMe) payload.currentPassword = document.getElementById("dialog-admin-current").value;
+      else payload.username = username;
+      await api("/api/admins/password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      closeDialog();
+      text("admins-message", "口令已修改");
+      await loadAdmins();
+    }
+  } catch (err) {
+    error.textContent = err.message;
+  }
+});
+
 async function loadCredentials() {
   const message = document.getElementById("cred-message");
   try {
@@ -397,12 +556,14 @@ async function loadCredentials() {
       const source = document.createElement("td");
       source.textContent = item.configured ? (item.source === "file" ? "文件" : "环境变量") : "未配置";
       const actions = document.createElement("td");
+      actions.className = "row-actions";
+      const edit = iconButton("编辑", "edit", "ghost");
+      edit.addEventListener("click", () => openCredDialog(item));
+      actions.appendChild(edit);
       if (item.source === "file") {
-        const del = document.createElement("button");
-        del.type = "button";
-        del.className = "danger";
-        del.textContent = "从文件删除";
+        const del = iconButton("删除", "trash", "ghost");
         del.addEventListener("click", async () => {
+          if (!confirm(`从文件删除凭据 ${item.name}？`)) return;
           try {
             await api("/api/credentials", {
               method: "DELETE",
@@ -425,26 +586,7 @@ async function loadCredentials() {
   }
 }
 
-document.getElementById("save-cred").addEventListener("click", async () => {
-  const message = document.getElementById("cred-message");
-  try {
-    await api("/api/credentials", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: document.getElementById("cred-name").value.trim() || "default",
-        accessKeyId: document.getElementById("cred-id").value,
-        accessKeySecret: document.getElementById("cred-secret").value,
-      }),
-    });
-    document.getElementById("cred-id").value = "";
-    document.getElementById("cred-secret").value = "";
-    message.textContent = "已保存";
-    await loadCredentials();
-  } catch (err) {
-    message.textContent = err.message;
-  }
-});
+document.getElementById("create-cred").addEventListener("click", () => openCredDialog(null));
 
 async function loadAdmins() {
   const message = document.getElementById("admins-message");
@@ -459,12 +601,14 @@ async function loadAdmins() {
       const created = document.createElement("td");
       created.textContent = user.createdAt;
       const actions = document.createElement("td");
+      actions.className = "row-actions";
+      const edit = iconButton("编辑", "edit", "ghost");
+      edit.addEventListener("click", () => openAdminDialog(user, body.me));
+      actions.appendChild(edit);
       if (user.username !== body.me) {
-        const del = document.createElement("button");
-        del.type = "button";
-        del.className = "danger";
-        del.textContent = "删除";
+        const del = iconButton("删除", "trash", "ghost");
         del.addEventListener("click", async () => {
+          if (!confirm(`删除管理员 ${user.username}？`)) return;
           try {
             await api("/api/admins", {
               method: "DELETE",
@@ -487,44 +631,7 @@ async function loadAdmins() {
   }
 }
 
-document.getElementById("add-admin").addEventListener("click", async () => {
-  const message = document.getElementById("admins-message");
-  try {
-    await api("/api/admins", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        username: document.getElementById("new-admin").value.trim(),
-        password: document.getElementById("new-admin-password").value,
-      }),
-    });
-    document.getElementById("new-admin").value = "";
-    document.getElementById("new-admin-password").value = "";
-    message.textContent = "已添加";
-    await loadAdmins();
-  } catch (err) {
-    message.textContent = err.message;
-  }
-});
-
-document.getElementById("change-password").addEventListener("click", async () => {
-  const message = document.getElementById("admins-message");
-  try {
-    await api("/api/admins/password", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        currentPassword: document.getElementById("old-password").value,
-        newPassword: document.getElementById("new-password").value,
-      }),
-    });
-    document.getElementById("old-password").value = "";
-    document.getElementById("new-password").value = "";
-    message.textContent = "口令已修改";
-  } catch (err) {
-    message.textContent = err.message;
-  }
-});
+document.getElementById("create-admin").addEventListener("click", () => openAdminDialog(null, ""));
 
 refresh();
 setInterval(refresh, 5000);

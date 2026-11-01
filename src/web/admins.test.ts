@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { addAdmin, changePassword, createFirstAdmin, hasAdmins, listAdmins, removeAdmin, verifyAdmin } from "./admins.js";
+import { addAdmin, changePassword, createFirstAdmin, hasAdmins, listAdmins, removeAdmin, resetPassword, verifyAdmin } from "./admins.js";
 
 function path(): string {
   return join(mkdtempSync(join(tmpdir(), "admins-")), "admins.json");
@@ -41,4 +41,14 @@ test("改口令要核对旧口令", async () => {
   const ok = await changePassword(file, "ops", "correct-password", "new-password-xx");
   assert.equal(ok.ok, true);
   assert.equal(await verifyAdmin(file, "ops", "new-password-xx"), true);
+});
+
+test("可以给别人重设口令，不核对旧口令", async () => {
+  const file = path();
+  await createFirstAdmin(file, "ops", "correct-password", "2026-10-30T00:00:00.000Z");
+  await addAdmin(file, "two", "another-password", "2026-10-30T00:00:00.000Z");
+  const saved = await resetPassword(file, "two", "reset-password-x");
+  assert.equal(saved.ok, true);
+  assert.equal(await verifyAdmin(file, "two", "reset-password-x"), true);
+  assert.equal(await verifyAdmin(file, "two", "another-password"), false);
 });

@@ -30,7 +30,26 @@ test("没有管理员时进入初始化页，创建后可以登录", async () =>
     const html = await app.text();
     assert.match(html, /立即检查/);
     assert.match(html, /任务/);
+    assert.match(html, /创建凭据/);
+    assert.match(html, /创建管理员/);
     assert.equal(html.includes("SECRETPEM"), false);
+  } finally {
+    await started.close();
+  }
+});
+
+test("表单提交也可以创建第一个管理员", async () => {
+  const data = sampleDir();
+  const started = await boot(data, { setup: true });
+  try {
+    const created = await fetch(`${started.base}/api/setup`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: `username=ops&password=${encodeURIComponent(password)}`,
+      redirect: "manual",
+    });
+    assert.equal(created.status, 303);
+    assert.match(cookieOf(created), /^acme_web=/);
   } finally {
     await started.close();
   }

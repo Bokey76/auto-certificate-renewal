@@ -11,6 +11,7 @@ import {
   hasAdmins,
   listAdmins,
   removeAdmin,
+  resetPassword,
   verifyAdmin,
 } from "./admins.js";
 import { configDocument, loadConfig, readConfigText, saveConfigObject, saveConfigText } from "../config/config.js";
@@ -26,11 +27,10 @@ const BLOCK_MS = 60_000;
 /** 允许对外提供的静态路径。其它相对路径一律不读。 */
 const STATIC: Record<string, string> = {
   "/css/app.css": "text/css; charset=utf-8",
-  "/js/setup.js": "text/javascript; charset=utf-8",
   "/js/app.js": "text/javascript; charset=utf-8",
 };
 
-const WEB_FILES = new Set(["setup.html", "login.html", "app.html", "css/app.css", "js/setup.js", "js/app.js"]);
+const WEB_FILES = new Set(["setup.html", "login.html", "app.html", "css/app.css", "js/app.js"]);
 
 interface Session {
   csrf: string;
@@ -242,13 +242,19 @@ export function startWeb(options: WebOptions): Promise<WebServer> {
         sendJson(res, 413, { ok: false, error: "请求过大" });
         return;
       }
-      const parsed = parseJson(body) as { currentPassword?: unknown; newPassword?: unknown };
-      const saved = await changePassword(
-        adminsPath(options.configPath),
-        session.username,
-        typeof parsed.currentPassword === "string" ? parsed.currentPassword : "",
-        typeof parsed.newPassword === "string" ? parsed.newPassword : "",
-      );
+      const parsed = parseJson(body) as { username?: unknown; currentPassword?: unknown; newPassword?: unknown };
+      const target = typeof parsed.username === "string" ? parsed.username.trim() : "";
+      const next = typeof parsed.newPassword === "string" ? parsed.newPassword : "";
+      const file = adminsPath(options.configPath);
+      const saved =
+        target && target !== session.username
+          ? await resetPassword(file, target, next)
+          : await changePassword(
+              file,
+              session.username,
+              typeof parsed.currentPassword === "string" ? parsed.currentPassword : "",
+              next,
+            );
       sendJson(res, saved.ok ? 200 : 400, saved);
       return;
     }
@@ -282,17 +288,17 @@ export function startWeb(options: WebOptions): Promise<WebServer> {
       sendJson(res, 413, { ok: false, error: "请求过大" });
       return;
     }
-    const parsed = parseJson(body) as { username?: unknown; password?: unknown };
-    const username = typeof parsed.username === "string" ? parsed.username.trim() : "";
-    const password = typeof parsed.password === "string" ? parsed.password : "";
-    const created = await createFirstAdmin(adminsPath(options.configPath), username, password, now().toISOString());
+    const json = (req.headers["content-type"] ?? "").includes("application/json");
+    const fields = readLogin(req.headers["content-type"], body);
+    const created = await createFirstAdmin(adminsPath(options.configPath), fields.username, fields.password, now().toISOString());
     if (!created.ok) {
       noteFailure(req);
-      sendJson(res, 400, created);
+      if (json) sendJson(res, 400, created);
+      else sendHtmlFile(res, "setup.html", undefined, 400, created.error);
       return;
     }
     clearFailure(req);
-    beginSession(res, username);
+    beginSession(res, fields.username);
   }
 
   async function login(req: IncomingMessage, res: ServerResponse): Promise<void> {

@@ -105,6 +105,21 @@ export async function changePassword(
   return { ok: true };
 }
 
+/** 给别人设新口令，不核对旧口令。 */
+export async function resetPassword(
+  path: string,
+  username: string,
+  next: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (next.length < 12) return { ok: false, error: "口令至少要有 12 位" };
+  const users = readUsers(path);
+  const user = users.find((item) => item.username === username);
+  if (!user) return { ok: false, error: "没有这个管理员" };
+  user.passwordHash = await hashPassword(next);
+  writeUsers(path, users);
+  return { ok: true };
+}
+
 function checkAccount(username: string, password: string): string | null {
   if (!USERNAME.test(username)) return "用户名必须是 1–40 位字母、数字、下划线或连字符，且不能以下划线或连字符开头或结尾";
   if (password.length < 12) return "口令至少要有 12 位";

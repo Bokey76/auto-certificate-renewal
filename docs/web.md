@@ -20,6 +20,39 @@ ssh -L 8787:127.0.0.1:8787 <用户>@<服务器>
 
 `web` 不设 `privileged`，也不挂证书目录。端口可用环境变量 `WEB_PORT` 改（默认 8787）。
 
+## Windows 本机调试
+
+Windows 上可以跑控制台和单元测试，用来看页面、改配置、验证接口。真正签发、写 Nginx、调阿里云 API 要在 Linux 上跑 `renew` 容器。
+
+程序默认读容器路径 `/config/config.yaml` 和 `/var/lib/acme`，本机必须改成仓库里的文件。`.nvmrc` 写的是 Node `24.22.1`；若 nvm-windows 里还没有这个版本，用已安装的 24.21.x，把该版本的目录放到 PATH 最前面。PowerShell 里用 `npm.cmd`，不要用 `npm.ps1`。
+
+```powershell
+cd <仓库根目录>
+Copy-Item -Force .env.example .env
+if (-not (Test-Path data)) { New-Item -ItemType Directory data }
+if (-not (Test-Path config\config.yaml)) { Copy-Item config\config.example.yaml config\config.yaml }
+
+$env:PATH = "<Node 24 安装目录>;" + $env:PATH
+$env:CONFIG_PATH = "$PWD\config\config.yaml"
+$env:CERT_RENEW_DATA_DIR = "$PWD\data"
+
+npm.cmd install
+npm.cmd run build
+node dist/cli.js web
+```
+
+浏览器打开 `http://127.0.0.1:8787`。第一次打开创建管理员（口令至少 12 位），账号写到 `config/admins.json`。已经有管理员时进入登录页。
+
+| 改了什么 | 怎么看到 |
+| --- | --- |
+| `web/` 下的 HTML / CSS / JS | 刷新浏览器 |
+| `src/` 下的 TypeScript | 再执行 `npm.cmd run build`，停掉 `web` 后重新 `node dist/cli.js web` |
+| 逻辑是否正确 | `npm.cmd test`（不访问 Let’s Encrypt 和阿里云） |
+
+网页上的「立即检查」只给时刻表进程留一张请求。本机没有 Linux 的 `renew` 容器时，请求会写在 `data/control/run-request`，不会真正签发。
+
+本机直接打开 `http://127.0.0.1:8787`，不要设 `WEB_COOKIE_SECURE=true`。
+
 ## 第一次使用
 
 `config/admins.json` 不存在或里面没有用户时，打开网页是初始化页。填写用户名和口令（至少 12 位）后写入该文件，并自动登录。之后可在「管理员」里加人。
