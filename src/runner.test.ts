@@ -159,6 +159,50 @@ test("未到期时不调用 Certbot，也不跑钩子", async () => {
   assert.equal(calls.includes("/bin/sh"), false);
 });
 
+test("强制续签时即使未到期也调用 Certbot", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "run-"));
+  const certDir = join(dir, "src-cert");
+  const { fullchain, key } = writeFixture(mkdir(certDir), "live");
+  const liveDir = join(dir, "letsencrypt", "live", "www");
+  mkdir(liveDir);
+  writeFileSync(join(liveDir, "fullchain.pem"), readFileSync(fullchain));
+  writeFileSync(join(liveDir, "privkey.pem"), readFileSync(key));
+  writeFileSync(
+    join(mkdir(join(dir, "state")), "www.json"),
+    JSON.stringify({
+      jobId: "www",
+      certName: "www",
+      targets: { [join(dir, "dest", "fullchain.pem")]: { ok: true, at: "2026-10-01T00:00:00.000Z", nginxTest: "passed", nginxReload: "passed" } },
+    }),
+  );
+  const calls: string[] = [];
+  const config = baseConfig();
+  config.jobs = [
+    {
+      id: "www",
+      index: 0,
+      enabled: true,
+      domains: ["example.com"],
+      challenge: { type: "http-01", webroot: "/var/www/acme" },
+      apply: [{ type: "nginx", kind: "baota", certDir: join(dir, "dest"), fullchainName: "fullchain.pem", privkeyName: "privkey.pem", nginxBin: "nginx" }],
+    },
+  ];
+  const code = await runAll({
+    config,
+    invalidJobs: [],
+    dataDir: dir,
+    dryRun: false,
+    force: true,
+    logger: createLogger(join(dir, "logs", "run.log")),
+    deps: fakeDeps(async (argv) => {
+      calls.push(argv[0]);
+      return { code: 0, stdout: "", stderr: "" };
+    }),
+  });
+  assert.equal(code, 0);
+  assert.equal(calls.includes("certbot"), true);
+});
+
 test("nginx 测试失败后仍执行 CDN，钩子只在新签发后运行", async () => {
   const dir = mkdtempSync(join(tmpdir(), "run-"));
   const made = writeFixture(mkdir(join(dir, "made")), "new");

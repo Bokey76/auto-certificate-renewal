@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="%%CSRF%%">
+  <title>证书控制台</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <main>
+    <header class="bar">
+      <h1>证书控制台</h1>
+      <button id="logout" class="secondary" type="button">退出</button>
+    </header>
+    <nav>
+      <button type="button" data-tab="status" class="active">状态</button>
+      <button type="button" data-tab="jobs">任务</button>
+      <button type="button" data-tab="yaml">YAML</button>
+      <button type="button" data-tab="credentials">凭据</button>
+      <button type="button" data-tab="admins">管理员</button>
+    </nav>
+
+    <section id="status" class="panel active">
+      <div class="card">
+        <p id="server-name"></p>
+        <p id="scheduler"></p>
+        <p id="last-run"></p>
+        <p id="config-error" class="bad"></p>
+        <p id="action-message" class="note"></p>
+        <div class="row">
+          <label class="check"><input id="dry-run" type="checkbox"> 演练</label>
+          <label class="check"><input id="force" type="checkbox"> 强制续签</label>
+        </div>
+        <div class="actions">
+          <button id="run" type="button">立即检查</button>
+          <button id="pause" type="button" class="secondary">暂停定时检查</button>
+          <button id="resume" type="button" class="secondary">恢复定时检查</button>
+        </div>
+      </div>
+      <h2>任务</h2>
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>任务</th>
+              <th>状态</th>
+              <th>到期</th>
+              <th>Nginx / CDN</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="jobs-table"></tbody>
+        </table>
+      </div>
+      <h2>最近日志</h2>
+      <pre id="log" class="log"></pre>
+    </section>
+
+    <section id="jobs" class="panel">
+      <div class="card">
+        <p>保存后写回本机 <code>config.yaml</code>。表单保存会重排 YAML，注释不会保留。签发后钩子是任意 shell，由续签进程执行。</p>
+        <p id="jobs-message" class="note"></p>
+        <div class="grid">
+          <div>
+            <label for="serverName">机器名</label>
+            <input id="serverName">
+          </div>
+          <div>
+            <label for="email">Let’s Encrypt 邮箱</label>
+            <input id="email">
+          </div>
+          <div>
+            <label for="regionId">阿里云地域</label>
+            <input id="regionId">
+          </div>
+          <div>
+            <label for="hours">检查小时（逗号分隔）</label>
+            <input id="hours" placeholder="3,15">
+          </div>
+          <div>
+            <label for="renewBeforeDays">提前续签天数</label>
+            <input id="renewBeforeDays" type="number" min="1">
+          </div>
+          <div>
+            <label for="keyType">私钥类型</label>
+            <select id="keyType">
+              <option value="ecdsa">ecdsa</option>
+              <option value="rsa">rsa</option>
+            </select>
+          </div>
+        </div>
+        <label class="check"><input id="staging" type="checkbox"> Let’s Encrypt 测试环境</label>
+        <div id="job-list"></div>
+        <div class="actions">
+          <button id="add-job" type="button" class="secondary">添加任务</button>
+          <button id="save-jobs" type="button">保存任务配置</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="yaml" class="panel">
+      <div class="card">
+        <p>直接编辑 <code>config.yaml</code>。校验通过后按原文保存。</p>
+        <p id="yaml-message" class="note"></p>
+        <textarea id="yaml-text" class="yaml" spellcheck="false"></textarea>
+        <div class="actions">
+          <button id="reload-yaml" type="button" class="secondary">重新读取</button>
+          <button id="save-yaml" type="button">保存 YAML</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="credentials" class="panel">
+      <div class="card">
+        <p>阿里云 AccessKey 写在本机 <code>credentials.json</code>。页面不显示已保存的密钥。任务里的 <code>credential</code> 对应该名字，缺省为 default。</p>
+        <p id="cred-message" class="note"></p>
+        <table>
+          <thead><tr><th>名字</th><th>来源</th><th></th></tr></thead>
+          <tbody id="cred-table"></tbody>
+        </table>
+        <h2>写入或覆盖</h2>
+        <div class="grid">
+          <div>
+            <label for="cred-name">名字</label>
+            <input id="cred-name" value="default" placeholder="default 或 prod">
+          </div>
+          <div>
+            <label for="cred-id">AccessKeyId</label>
+            <input id="cred-id" autocomplete="off">
+          </div>
+          <div>
+            <label for="cred-secret">AccessKeySecret</label>
+            <input id="cred-secret" type="password" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="actions">
+          <button id="save-cred" type="button">保存凭据</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="admins" class="panel">
+      <div class="card">
+        <p id="admins-message" class="note"></p>
+        <table>
+          <thead><tr><th>用户名</th><th>创建时间</th><th></th></tr></thead>
+          <tbody id="admin-table"></tbody>
+        </table>
+        <h2>添加管理员</h2>
+        <div class="grid">
+          <div>
+            <label for="new-admin">用户名</label>
+            <input id="new-admin">
+          </div>
+          <div>
+            <label for="new-admin-password">口令</label>
+            <input id="new-admin-password" type="password" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="actions">
+          <button id="add-admin" type="button">添加</button>
+        </div>
+        <h2>修改我的口令</h2>
+        <div class="grid">
+          <div>
+            <label for="old-password">当前口令</label>
+            <input id="old-password" type="password" autocomplete="current-password">
+          </div>
+          <div>
+            <label for="new-password">新口令</label>
+            <input id="new-password" type="password" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="actions">
+          <button id="change-password" type="button">修改口令</button>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

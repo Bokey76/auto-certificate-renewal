@@ -1,0 +1,84 @@
+body {
+  margin: 0;
+  font: 16px/1.5 "Segoe UI", "PingFang SC", sans-serif;
+  background: #f3f5f7;
+  color: #1c2430;
+}
+main {
+  max-width: 1080px;
+  margin: 24px auto 48px;
+  padding: 0 16px;
+}
+.card {
+  background: #fff;
+  border: 1px solid #e1e6ec;
+  border-radius: 12px;
+  padding: 24px;
+}
+.narrow { max-width: 420px; margin: 12vh auto; }
+h1 { font-size: 22px; margin: 0 0 8px; }
+h2 { font-size: 18px; margin: 24px 0 8px; }
+p { margin: 0 0 16px; color: #5c6b7a; }
+label { display: block; font-weight: 600; margin: 12px 0 6px; }
+input, select, textarea {
+  font: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid #c5d0db;
+  border-radius: 8px;
+  background: #fff;
+}
+textarea { min-height: 120px; font-family: ui-monospace, Consolas, monospace; }
+textarea.yaml { min-height: 420px; }
+button, .btn {
+  font: inherit;
+  background: #1f4e79;
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+button.secondary { background: #5c6b7a; }
+button.danger { background: #9f1239; }
+button:disabled { opacity: 0.6; cursor: default; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.bad { color: #9f1239; min-height: 1.5em; }
+.ok { color: #0f766e; }
+.muted { color: #5c6b7a; }
+header.bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+nav button { background: #d7e1ea; color: #1c2430; }
+nav button.active { background: #1f4e79; color: #fff; }
+.panel { display: none; }
+.panel.active { display: block; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #e1e6ec; vertical-align: top; }
+pre.log {
+  background: #0f1720;
+  color: #e7eef5;
+  padding: 12px;
+  border-radius: 8px;
+  overflow: auto;
+  max-height: 320px;
+  font-size: 13px;
+}
+.job {
+  border: 1px solid #e1e6ec;
+  border-radius: 10px;
+  padding: 16px;
+  margin: 12px 0;
+}
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+.check { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.check input { width: auto; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.note { margin: 8px 0; }

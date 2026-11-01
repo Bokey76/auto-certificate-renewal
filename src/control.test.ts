@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -33,14 +33,23 @@ test("暂停标记可以创建和删除", () => {
 
 test("检查请求只被消费一次", () => {
   const data = dir();
+  const first = { at: "2026-10-30T00:00:00.000Z", jobId: "www", dryRun: true, force: false };
   assert.equal(isRunRequested(data), false);
-  assert.deepEqual(requestRun(data, "2026-10-30T00:00:00.000Z"), { already: false });
+  assert.deepEqual(requestRun(data, first), { already: false });
   assert.equal(isRunRequested(data), true);
-  assert.deepEqual(requestRun(data, "2026-10-30T01:00:00.000Z"), { already: true });
-  assert.equal(readFileSync(join(data, "control", "run-request"), "utf8"), "2026-10-30T00:00:00.000Z");
-  assert.equal(consumeRunRequest(data), true);
+  assert.deepEqual(requestRun(data, { at: "2026-10-30T01:00:00.000Z", jobId: null, dryRun: false, force: true }), { already: true });
+  const stored = JSON.parse(readFileSync(join(data, "control", "run-request"), "utf8")) as typeof first;
+  assert.deepEqual(stored, first);
+  assert.deepEqual(consumeRunRequest(data), first);
   assert.equal(isRunRequested(data), false);
-  assert.equal(consumeRunRequest(data), false);
+  assert.equal(consumeRunRequest(data), null);
+});
+
+test("旧的时间戳请求文件仍能读成跑全部", () => {
+  const data = dir();
+  mkdirSync(join(data, "control"), { recursive: true });
+  writeFileSync(join(data, "control", "run-request"), "2026-10-30T00:00:00.000Z", "utf8");
+  assert.deepEqual(consumeRunRequest(data), { at: "2026-10-30T00:00:00.000Z", jobId: null, dryRun: false, force: false });
 });
 
 test("心跳可以读写，坏 JSON 不当成在线", () => {

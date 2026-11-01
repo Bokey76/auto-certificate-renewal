@@ -105,9 +105,9 @@ test("暂停时已有请求就只跑一轮并保持暂停", async () => {
     readPaused: () => true,
     runPending: () => pending,
     consumeRunRequest: () => {
-      if (!pending) return false;
+      if (!pending) return null;
       pending = false;
-      return true;
+      return { at: "2026-10-26T18:30:00.000Z", jobId: null, dryRun: false, force: false };
     },
     runOnce: async () => {
       runs += 1;
@@ -126,9 +126,9 @@ test("运行中到来的请求在这一轮结束后再跑一次", async () => {
   await runScheduleLoop(deps({
     runPending: () => pending,
     consumeRunRequest: () => {
-      if (!pending) return false;
+      if (!pending) return null;
       pending = false;
-      return true;
+      return { at: "2026-10-26T18:30:00.000Z", jobId: "www", dryRun: true, force: false };
     },
     runOnce: async () => {
       runs += 1;
@@ -163,7 +163,7 @@ function deps(over: Partial<ScheduleLoopDeps> & Pick<ScheduleLoopDeps, "runOnce"
     timeZone: zone,
     readHours: () => [3, 15],
     readPaused: () => false,
-    consumeRunRequest: () => false,
+    consumeRunRequest: () => null,
     runPending: () => false,
     writeHeartbeat: (_snapshot: SchedulerSnapshot) => {},
     log: () => {},

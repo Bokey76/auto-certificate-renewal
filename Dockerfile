@@ -19,5 +19,6 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
+COPY web ./web
 RUN chmod +x /app/dist/cli.js && ln -sf /app/dist/cli.js /usr/local/bin/cert-renew
 CMD ["cert-renew", "schedule"]

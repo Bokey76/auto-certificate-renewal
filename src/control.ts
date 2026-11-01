@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { atomicWrite } from "./write-file.js";
 
 /** 调度进程心跳。超过这个毫秒数没有更新，网页视为未在运行。 */
 export const HEARTBEAT_STALE_MS = 20_000;
@@ -12,6 +13,13 @@ export interface SchedulerSnapshot {
   paused: boolean;
   nextRunAt: string | null;
   runPending: boolean;
+}
+
+export interface RunRequest {
+  at: string;
+  jobId: string | null;
+  dryRun: boolean;
+  force: boolean;
 }
 
 function controlDir(dataDir: string): string {
@@ -44,32 +52,58 @@ export function isRunRequested(dataDir: string): boolean {
 }
 
 /** 记下再跑一轮。已经有请求时不覆盖，调用方可以告诉用户「已经记下」。 */
-export function requestRun(dataDir: string, at: string): { already: boolean } {
+export function requestRun(dataDir: string, request: RunRequest): { already: boolean } {
   mkdirSync(controlDir(dataDir), { recursive: true });
   if (existsSync(runRequestPath(dataDir))) return { already: true };
-  writeFileSync(runRequestPath(dataDir), at, "utf8");
+  atomicWrite(runRequestPath(dataDir), `${JSON.stringify(request)}\n`);
   return { already: false };
 }
 
-/** 调度开始跑之前删掉请求。没有请求时返回 false。 */
-export function consumeRunRequest(dataDir: string): boolean {
-  if (!existsSync(runRequestPath(dataDir))) return false;
+/** 读尚未取走的请求。没有或坏内容时返回 null。 */
+export function readRunRequest(dataDir: string): RunRequest | null {
+  const path = runRequestPath(dataDir);
+  if (!existsSync(path)) return null;
+  try {
+    return parseRunRequest(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/** 调度开始跑之前取走请求。没有请求时返回 null。 */
+export function consumeRunRequest(dataDir: string): RunRequest | null {
+  const request = readRunRequest(dataDir);
+  if (!request) {
+    rmSync(runRequestPath(dataDir), { force: true });
+    return null;
+  }
   rmSync(runRequestPath(dataDir), { force: true });
-  return true;
+  return request;
+}
+
+function parseRunRequest(text: string): RunRequest | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (!trimmed.startsWith("{")) {
+    if (Number.isNaN(Date.parse(trimmed))) return null;
+    return { at: trimmed, jobId: null, dryRun: false, force: false };
+  }
+  const parsed = JSON.parse(trimmed) as Partial<RunRequest>;
+  if (typeof parsed.at !== "string" || Number.isNaN(Date.parse(parsed.at))) return null;
+  const jobId = parsed.jobId === undefined || parsed.jobId === null ? null : parsed.jobId;
+  if (jobId !== null && (typeof jobId !== "string" || jobId.trim() === "")) return null;
+  return {
+    at: parsed.at,
+    jobId,
+    dryRun: parsed.dryRun === true,
+    force: parsed.force === true,
+  };
 }
 
 /** 原子写入 scheduler.json。先写临时文件再改名，避免网页读到半截 JSON。 */
 export function writeScheduler(dataDir: string, snapshot: SchedulerSnapshot): void {
   mkdirSync(dataDir, { recursive: true });
-  const path = join(dataDir, "scheduler.json");
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(snapshot)}\n`, "utf8");
-  try {
-    renameSync(tmp, path);
-  } catch {
-    rmSync(path, { force: true });
-    renameSync(tmp, path);
-  }
+  atomicWrite(join(dataDir, "scheduler.json"), `${JSON.stringify(snapshot)}\n`);
 }
 
 /** 读心跳。文件不存在或 JSON 不完整时返回 null，网页不当成在线。 */

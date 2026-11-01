@@ -1,4 +1,6 @@
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { loadCredentialsMap } from "./credentials.js";
 
 /** 读取项目根目录的 .env。已存在的环境变量不覆盖。 */
 export function loadDotEnv(path: string): void {
@@ -23,14 +25,18 @@ export function loadDotEnv(path: string): void {
   }
 }
 
-/** 读默认密钥，或 `credential: prod` 对应的 `_PROD` 那一组。缺值就抛错。 */
+/** 先读配置旁的 credentials.json，没有再读环境变量。缺值就抛错。 */
 export function alibabaCredential(name?: string): { accessKeyId: string; accessKeySecret: string } {
-  const suffix = name ? `_${name.toUpperCase()}` : "";
+  const key = name?.trim() || "default";
+  const configPath = process.env.CONFIG_PATH?.trim() || "/config/config.yaml";
+  const fromFile = loadCredentialsMap(join(dirname(configPath), "credentials.json"))[key];
+  if (fromFile) return fromFile;
+  const suffix = key === "default" ? "" : `_${key.toUpperCase()}`;
   const accessKeyId = process.env[`ALIBABA_CLOUD_ACCESS_KEY_ID${suffix}`]?.trim() ?? "";
   const accessKeySecret = process.env[`ALIBABA_CLOUD_ACCESS_KEY_SECRET${suffix}`]?.trim() ?? "";
   if (!accessKeyId || !accessKeySecret) {
-    const label = name ? `credential=${name}` : "默认凭据";
-    throw new Error(`缺少阿里云${label}：ALIBABA_CLOUD_ACCESS_KEY_ID${suffix} 与 ALIBABA_CLOUD_ACCESS_KEY_SECRET${suffix}`);
+    const label = key === "default" ? "默认凭据" : `credential=${key}`;
+    throw new Error(`缺少阿里云${label}：请在网页里填写，或设置 ALIBABA_CLOUD_ACCESS_KEY_ID${suffix} 与 ALIBABA_CLOUD_ACCESS_KEY_SECRET${suffix}`);
   }
   return { accessKeyId, accessKeySecret };
 }

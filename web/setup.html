@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>创建管理员</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <main class="card narrow">
+    <h1>创建管理员</h1>
+    <p>这台机器还没有管理员。创建第一个账号后即可登录。口令至少 12 位。</p>
+    <form id="setup">
+      <label for="username">用户名</label>
+      <input id="username" name="username" autocomplete="username" required>
+      <label for="password">口令</label>
+      <input id="password" name="password" type="password" autocomplete="new-password" required minlength="12">
+      <div id="error" class="bad"></div>
+      <button type="submit">创建并进入</button>
+    </form>
+  </main>
+  <script src="/setup.js"></script>
+</body>
+</html>

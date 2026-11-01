@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-/** 进程入口：run 跑一轮，schedule 按时刻表循环，web 提供状态页，dns-* 给 Certbot 当钩子。 */
+/** 进程入口：run 跑一轮，schedule 按时刻表循环，web 提供控制台，dns-* 给 Certbot 当钩子。 */
 import { mkdirSync } from "node:fs";
 import { hostname } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createAliyunClients } from "./aliyun.js";
 import { loadConfig } from "./config.js";
 import { dnsAuth, dnsCleanup } from "./dns-hook.js";
@@ -41,7 +42,7 @@ try {
   if (command === "web") {
     await serveWeb();
   } else {
-    process.stderr.write("用法：cert-renew run [--job id] [--dry-run] | cert-renew schedule | cert-renew web | cert-renew dns-auth | cert-renew dns-cleanup\n");
+    process.stderr.write("用法：cert-renew run [--job id] [--dry-run] [--force] | cert-renew schedule | cert-renew web | cert-renew dns-auth | cert-renew dns-cleanup\n");
     process.exit(1);
   }
 } catch (error) {
@@ -51,7 +52,7 @@ try {
 }
 
 /** 读配置并跑一轮。根配置失败返回 1，不写 status.json。 */
-async function executeRun(flags: { job?: string; dryRun: boolean }): Promise<number> {
+async function executeRun(flags: { job?: string; dryRun: boolean; force: boolean }): Promise<number> {
   const loaded = loadConfig(configPath);
   const stamp = new Date().toISOString().replaceAll(":", "-");
   const logger = createLogger(join(dataDir, "logs", `${stamp}.log`));
@@ -64,6 +65,7 @@ async function executeRun(flags: { job?: string; dryRun: boolean }): Promise<num
     invalidJobs: loaded.invalidJobs,
     dataDir,
     dryRun: flags.dryRun,
+    force: flags.force,
     onlyJob: flags.job,
     logger,
     deps: {
@@ -76,14 +78,12 @@ async function executeRun(flags: { job?: string; dryRun: boolean }): Promise<num
   });
 }
 
-/** 口令太短时直接退出，不监听。续签进程不走这里。 */
+/** 没有管理员时仍监听，打开网页走初始化。 */
 async function serveWeb(): Promise<void> {
-  const password = process.env.WEB_PASSWORD ?? "";
-  if (password.length < 12) throw new Error("WEB_PASSWORD 至少要有 12 位，网页进程退出");
   const started = await startWeb({
     dataDir,
     configPath,
-    password,
+    webDir: join(dirname(fileURLToPath(import.meta.url)), "..", "web"),
     host: "0.0.0.0",
     port: webPort(),
     secureCookie: process.env.WEB_COOKIE_SECURE === "true",
@@ -113,7 +113,12 @@ async function schedule(): Promise<void> {
       return loaded.ok ? loaded.config.schedule.hours : DEFAULT_SCHEDULE_HOURS;
     },
     ...volumeControl(dataDir),
-    runOnce: () => executeRun({ dryRun: false }),
+    runOnce: (request) =>
+      executeRun({
+        job: request?.jobId ?? undefined,
+        dryRun: request?.dryRun ?? false,
+        force: request?.force ?? false,
+      }),
     log: (line) => process.stdout.write(`${line}\n`),
     offsetMinutes: randomOffsetMinutes,
     tickMs: 5000,
@@ -125,13 +130,15 @@ async function schedule(): Promise<void> {
   });
 }
 
-/** 解析 `run` 的 `--job` 和 `--dry-run`。 */
-function readFlags(args: string[]): { job?: string; dryRun: boolean } {
+/** 解析 `run` 的 `--job`、`--dry-run`、`--force`。 */
+function readFlags(args: string[]): { job?: string; dryRun: boolean; force: boolean } {
   let job: string | undefined;
   let dryRun = false;
+  let force = false;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === "--dry-run") dryRun = true;
+    else if (arg === "--force") force = true;
     else if (arg === "--job") {
       job = args[i + 1];
       i += 1;
@@ -140,5 +147,5 @@ function readFlags(args: string[]): { job?: string; dryRun: boolean } {
       throw new Error(`未知参数 ${arg}`);
     }
   }
-  return { job, dryRun };
+  return { job, dryRun, force };
 }

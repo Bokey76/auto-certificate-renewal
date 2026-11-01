@@ -1,20 +1,47 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { isPaused, isRunRequested, writeScheduler } from "./control.js";
+import { fileURLToPath } from "node:url";
+import { createFirstAdmin } from "./admins.js";
+import { isPaused, isRunRequested, readRunRequest, writeScheduler } from "./control.js";
 import { startWeb, type WebServer } from "./web.js";
 
 const password = "correct-password";
 const now = new Date("2026-10-30T03:00:00.000Z");
+const webDir = fileURLToPath(new URL("../web", import.meta.url));
+
+test("没有管理员时进入初始化页，创建后可以登录", async () => {
+  const data = sampleDir();
+  const started = await boot(data, { setup: true });
+  try {
+    const page = await fetch(`${started.base}/`);
+    assert.match(await page.text(), /创建管理员/);
+    const created = await fetch(`${started.base}/api/setup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "ops", password }),
+      redirect: "manual",
+    });
+    assert.equal(created.status, 303);
+    const cookie = cookieOf(created);
+    const app = await fetch(`${started.base}/`, { headers: { cookie } });
+    const html = await app.text();
+    assert.match(html, /立即检查/);
+    assert.match(html, /任务/);
+    assert.equal(html.includes("SECRETPEM"), false);
+  } finally {
+    await started.close();
+  }
+});
 
 test("错误口令不能进入，连续失败会暂时拦住", async () => {
   const started = await boot(sampleDir());
   try {
     const wrong = await postLogin(started, "wrong-password-xx");
     assert.equal(wrong.status, 401);
-    assert.match(wrong.text, /口令不对/);
+    assert.match(wrong.text, /用户名或口令不对/);
     assert.equal(wrong.cookie, "");
     for (let i = 0; i < 7; i += 1) {
       const again = await postLogin(started, "wrong-password-xx");
@@ -90,9 +117,15 @@ test("登录后可以看概览，三个按钮写到控制文件", async () => {
     const pausedAgain = await postJson(started, "/api/pause", headers);
     assert.equal(pausedAgain.message, "已暂停定时检查");
 
-    const run = await postJson(started, "/api/run", headers);
+    const run = await postJson(started, "/api/run", headers, { jobId: "www-example", dryRun: true, force: true });
     assert.equal(run.message, "已请求。调度进程起来后才会执行");
     assert.equal(isRunRequested(data), true);
+    assert.deepEqual(readRunRequest(data), {
+      at: now.toISOString(),
+      jobId: "www-example",
+      dryRun: true,
+      force: true,
+    });
     const runAgain = await postJson(started, "/api/run", headers);
     assert.equal(runAgain.message, "已经记下");
 
@@ -135,6 +168,52 @@ test("调度正在检查时，暂停和再跑一轮用另一句提示", async ()
   }
 });
 
+test("登录后可以保存配置和凭据，密钥不回显", async () => {
+  const data = sampleDir();
+  const started = await boot(data);
+  try {
+    const loggedIn = await postLogin(started, password);
+    const page = await fetch(`${started.base}/`, { headers: { cookie: loggedIn.cookie } });
+    const csrf = /name="csrf-token" content="([a-f0-9]+)"/.exec(await page.text())?.[1] ?? "";
+    const headers = { cookie: loggedIn.cookie, "x-csrf-token": csrf, "content-type": "application/json" };
+    const saved = await fetch(`${started.base}/api/config`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        serverName: "origin-b",
+        letsencrypt: { email: "ops@example.com", staging: true, renewBeforeDays: 20, keyType: "ecdsa" },
+        alibaba: { regionId: "cn-hangzhou" },
+        schedule: { hours: [4] },
+        jobs: [
+          {
+            id: "www-example",
+            enabled: true,
+            domains: ["example.com"],
+            challenge: { type: "dns-01", zone: "example.com", propagationSeconds: 60 },
+            apply: [],
+          },
+        ],
+      }),
+    });
+    assert.equal(saved.status, 200);
+    assert.match(readFileSync(join(data, "config.yaml"), "utf8"), /origin-b/);
+
+    const cred = await fetch(`${started.base}/api/credentials`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ name: "default", accessKeyId: "id-1", accessKeySecret: "secret-1" }),
+    });
+    assert.equal(cred.status, 200);
+    const listed = await fetch(`${started.base}/api/credentials`, { headers: { cookie: loggedIn.cookie } });
+    const view = await listed.json() as { credentials: Array<{ name: string; configured: boolean; source: string }> };
+    assert.equal(view.credentials[0].name, "default");
+    assert.equal(view.credentials[0].configured, true);
+    assert.equal(JSON.stringify(view).includes("secret-1"), false);
+  } finally {
+    await started.close();
+  }
+});
+
 function sampleDir(): string {
   const data = mkdtempSync(join(tmpdir(), "web-"));
   writeFileSync(
@@ -160,11 +239,12 @@ jobs:
   return data;
 }
 
-async function boot(dataDir: string): Promise<WebServer & { base: string }> {
+async function boot(dataDir: string, flags?: { setup?: boolean }): Promise<WebServer & { base: string }> {
+  if (!flags?.setup) await createFirstAdmin(join(dataDir, "admins.json"), "ops", password, now.toISOString());
   const started = await startWeb({
     dataDir,
     configPath: join(dataDir, "config.yaml"),
-    password,
+    webDir,
     host: "127.0.0.1",
     port: 0,
     secureCookie: false,
@@ -178,16 +258,28 @@ async function postLogin(started: { base: string }, value: string): Promise<{ st
   const res = await fetch(`${started.base}/login`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: `password=${encodeURIComponent(value)}`,
+    body: `username=ops&password=${encodeURIComponent(value)}`,
     redirect: "manual",
   });
-  const list = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
-  const cookie = list.map((item) => item.split(";")[0]).join("; ");
-  return { status: res.status, cookie, text: await res.text() };
+  return { status: res.status, cookie: cookieOf(res), text: await res.text() };
 }
 
-async function postJson(started: { base: string }, path: string, headers: Record<string, string>): Promise<{ message: string }> {
-  const res = await fetch(`${started.base}${path}`, { method: "POST", headers });
+function cookieOf(res: Response): string {
+  const list = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
+  return list.map((item) => item.split(";")[0]).join("; ");
+}
+
+async function postJson(
+  started: { base: string },
+  path: string,
+  headers: Record<string, string>,
+  body?: unknown,
+): Promise<{ message: string }> {
+  const res = await fetch(`${started.base}${path}`, {
+    method: "POST",
+    headers: body ? { ...headers, "content-type": "application/json" } : headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
   assert.equal(res.status, 200);
   return await res.json() as { message: string };
 }

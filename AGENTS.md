@@ -14,16 +14,16 @@
 
 文档和示例只用占位符：`example.com`、`ops@example.com`、`<ACR域名>`、`<命名空间>`、空的 `.env.example`。地域示例用 `cn-hangzhou`。
 
-真实配置只出现在已被 `.gitignore` 排除的 `.env`、`config/config.yaml`，以及服务器上不提交的 compose。Docker 镜像不打进密钥和域名配置。
+真实配置只出现在已被 `.gitignore` 排除的 `.env`、`config/config.yaml`、`config/admins.json`、`config/credentials.json`、`data/`，以及服务器上不提交的 compose。Docker 镜像不打进密钥和域名配置。
 
 改完文档或示例后搜索：真实域名、`crpi-`、`LTAI`、非空 `ALIBABA_CLOUD_ACCESS_KEY`。
 
-不要放宽 `.gitignore` 对 `.env`、`config/config.yaml`、`*.pem`、`*.key` 的忽略。
+不要放宽 `.gitignore` 对 `.env`、`config/config.yaml`、`config/admins.json`、`config/credentials.json`、`/data/`、`*.pem`、`*.key` 的忽略。
 
 ## 实现范围
 
 - 当前：单机 Docker，YAML 驱动，Certbot，宝塔/自装 Nginx，阿里云 CDN 内容分发，阿里云 DNS-01
-- 本机状态网页已经有了。还没做的多机汇总、配置下发、通知和多机共用证书见 [docs/目标.md](docs/目标.md)。用户没要求就不要做
+- 本机网页已经可以看状态、改配置、跑检查。还没做的多机汇总、配置下发、通知和多机共用证书见 [docs/目标.md](docs/目标.md)。用户没要求就不要做
 - 不实现 ACME，不改 Nginx server 块，不写宝塔数据库，不删 CAS 旧证，不创建 CDN 域名
 
 操作说明写在根目录 `README.md` 和 `docs/`。不要把已经实现的行为再写回 [docs/目标.md](docs/目标.md)。

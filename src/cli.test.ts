@@ -48,19 +48,11 @@ jobs:
   assert.equal(status.jobs[0].status, "failed");
 });
 
-test("网页口令太短或端口不合法时退出码为 1", () => {
+test("网页端口不合法时退出码为 1", () => {
   const dir = mkdtempSync(join(tmpdir(), "cli-web-"));
-  const shortPassword = spawnSync(process.execPath, [cli, "web"], {
-    cwd: dir,
-    env: { ...process.env, WEB_PASSWORD: "short", CERT_RENEW_DATA_DIR: dir },
-    encoding: "utf8",
-  });
-  assert.equal(shortPassword.status, 1);
-  assert.match(shortPassword.stderr, /WEB_PASSWORD/);
-
   const badPort = spawnSync(process.execPath, [cli, "web"], {
     cwd: dir,
-    env: { ...process.env, WEB_PASSWORD: "correct-password", WEB_PORT: "0", CERT_RENEW_DATA_DIR: dir },
+    env: { ...process.env, WEB_PORT: "0", CERT_RENEW_DATA_DIR: dir },
     encoding: "utf8",
   });
   assert.equal(badPort.status, 1);

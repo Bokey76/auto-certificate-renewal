@@ -2,7 +2,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, realpathSync, 
 import { isAbsolute, join, relative, sep } from "node:path";
 import { cdnTargetKey } from "./cdn.js";
 import { loadConfig, nginxDestination } from "./config.js";
-import { isPaused, isRunRequested, readScheduler, schedulerOnline } from "./control.js";
+import { isPaused, isRunRequested, readRunRequest, readScheduler, schedulerOnline } from "./control.js";
 import { readJobState } from "./state.js";
 import type { ApplyAction, JobConfig, JobRunResult, JobState, StatusFile } from "./types.js";
 
@@ -55,6 +55,7 @@ export interface Overview {
       activityText: string;
       paused: boolean;
       runPending: boolean;
+      runRequest: { jobId: string | null; dryRun: boolean; force: boolean } | null;
       updatedAt: string | null;
       nextRunAt: string | null;
       nextRunText: string | null;
@@ -84,6 +85,7 @@ export function loadOverview(input: { dataDir: string; configPath: string; now: 
   const status = statusRead.status;
   const paused = isPaused(input.dataDir);
   const runPending = isRunRequested(input.dataDir);
+  const runRequest = readRunRequest(input.dataDir);
   const snapshot = readScheduler(input.dataDir);
   const online = schedulerOnline(snapshot, input.now);
   const activity = !online ? "offline" : snapshot?.state === "running" ? "running" : paused ? "paused" : "sleeping";
@@ -113,6 +115,7 @@ export function loadOverview(input: { dataDir: string; configPath: string; now: 
         activityText,
         paused,
         runPending,
+        runRequest: runRequest ? { jobId: runRequest.jobId, dryRun: runRequest.dryRun, force: runRequest.force } : null,
         updatedAt: snapshot?.updatedAt ?? null,
         nextRunAt: snapshot?.nextRunAt ?? null,
         nextRunText: formatTime(snapshot?.nextRunAt ?? null, input.timeZone),

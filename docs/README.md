@@ -20,4 +20,4 @@ cp config/config.example.yaml config/config.yaml
 cp .env.example .env
 ```
 
-`config/config.yaml` 由 compose 挂到容器内 `/config/config.yaml`，程序默认读这条路径。
+`config/` 由 compose 挂到容器内 `/config`，程序默认读 `/config/config.yaml`。`data/` 挂到 `/var/lib/acme`。

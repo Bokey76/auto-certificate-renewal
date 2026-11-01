@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { load as loadYaml } from "js-yaml";
+import { dump as dumpYaml, load as loadYaml } from "js-yaml";
 import type {
   AlibabaConfig,
   AppConfig,
@@ -15,24 +15,42 @@ import type {
   ScheduleConfig,
 } from "./types.js";
 import { DEFAULT_SCHEDULE_HOURS } from "./schedule.js";
+import { atomicWrite } from "./write-file.js";
+
+export type ConfigSaveResult = { ok: true } | { ok: false; error: string };
 
 const JOB_ID = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 const DOMAIN = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
 
 /** 读 YAML。根结构失败返回 ok:false；单条任务失败进 invalidJobs，其余照常。 */
 export function loadConfig(path: string): ConfigLoadResult {
-  let text: string;
+  const text = readConfigText(path);
+  if (text === undefined) return { ok: false, error: `无法读取配置 ${path}` };
+  return parseConfig(text);
+}
+
+/** 读配置原文。文件不在时返回 undefined。 */
+export function readConfigText(path: string): string | undefined {
   try {
-    text = readFileSync(path, "utf8");
-  } catch (error) {
-    return { ok: false, error: `无法读取配置 ${path}：${messageOf(error)}` };
+    return readFileSync(path, "utf8");
+  } catch {
+    return undefined;
   }
+}
+
+/** 解析 YAML 文本。 */
+export function parseConfig(text: string): ConfigLoadResult {
   let raw: unknown;
   try {
     raw = loadYaml(text);
   } catch (error) {
     return { ok: false, error: `YAML 无法解析：${messageOf(error)}` };
   }
+  return parseConfigObject(raw);
+}
+
+/** 解析已经是对象的配置（网页表单）。 */
+export function parseConfigObject(raw: unknown): ConfigLoadResult {
   if (!isRecord(raw)) return { ok: false, error: "配置根必须是映射" };
   const letsencrypt = parseLetsEncrypt(raw.letsencrypt);
   if (typeof letsencrypt === "string") return { ok: false, error: letsencrypt };
@@ -64,6 +82,83 @@ export function loadConfig(path: string): ConfigLoadResult {
     jobs,
   };
   return { ok: true, config, invalidJobs };
+}
+
+/** 校验通过且没有非法任务后写入原文。 */
+export function saveConfigText(path: string, text: string): ConfigSaveResult {
+  const parsed = parseConfig(text);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+  const invalid = saveInvalidError(parsed.invalidJobs);
+  if (invalid) return { ok: false, error: invalid };
+  atomicWrite(path, text.endsWith("\n") ? text : `${text}\n`);
+  return { ok: true };
+}
+
+/** 校验通过后写成 YAML。表单保存会丢掉原文注释。 */
+export function saveConfigObject(path: string, raw: unknown): ConfigSaveResult {
+  const parsed = parseConfigObject(raw);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+  const invalid = saveInvalidError(parsed.invalidJobs);
+  if (invalid) return { ok: false, error: invalid };
+  return saveConfigText(path, dumpConfig(parsed.config));
+}
+
+/** 给表单用的配置对象，不含内部 index。 */
+export function configDocument(config: AppConfig): Record<string, unknown> {
+  const doc: Record<string, unknown> = {};
+  if (config.serverName) doc.serverName = config.serverName;
+  doc.letsencrypt = {
+    email: config.letsencrypt.email,
+    staging: config.letsencrypt.staging,
+    renewBeforeDays: config.letsencrypt.renewBeforeDays,
+    keyType: config.letsencrypt.keyType,
+  };
+  doc.alibaba = { regionId: config.alibaba.regionId };
+  doc.schedule = { hours: config.schedule.hours };
+  doc.jobs = config.jobs.map(jobDocument);
+  return doc;
+}
+
+export function dumpConfig(config: AppConfig): string {
+  return dumpYaml(configDocument(config), { lineWidth: 100, noRefs: true, quotingType: '"', sortKeys: false });
+}
+
+function jobDocument(job: JobConfig): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    id: job.id,
+    enabled: job.enabled,
+    domains: job.domains,
+    challenge: job.challenge,
+  };
+  if (job.credential) out.credential = job.credential;
+  if (job.apply.length > 0) out.apply = job.apply.map(actionDocument);
+  if (job.hook) out.hook = { command: job.hook.command, timeoutSeconds: job.hook.timeoutSeconds };
+  return out;
+}
+
+function actionDocument(action: ApplyAction): Record<string, unknown> {
+  if (action.type === "aliyun-cdn") return { type: "aliyun-cdn", domainNames: action.domainNames };
+  if (action.kind === "custom") {
+    return {
+      type: "nginx",
+      kind: "custom",
+      fullchainPath: action.fullchainPath,
+      privkeyPath: action.privkeyPath,
+      nginxBin: action.nginxBin,
+    };
+  }
+  const out: Record<string, unknown> = { type: "nginx", kind: "baota", certDir: action.certDir };
+  if (action.fullchainName !== "fullchain.pem") out.fullchainName = action.fullchainName;
+  if (action.privkeyName !== "privkey.pem") out.privkeyName = action.privkeyName;
+  if (action.nginxBin !== "/www/server/nginx/sbin/nginx") out.nginxBin = action.nginxBin;
+  return out;
+}
+
+function saveInvalidError(invalidJobs: InvalidJob[]): string | null {
+  if (invalidJobs.length === 0) return null;
+  return invalidJobs
+    .map((job) => `第 ${job.index + 1} 条任务${job.id ? `（${job.id}）` : ""}：${job.error}`)
+    .join("；");
 }
 
 function parseLetsEncrypt(value: unknown): LetsEncryptConfig | string {

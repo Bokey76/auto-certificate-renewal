@@ -1,5 +1,5 @@
 import { consumeRunRequest as consumeRunRequestFile, isPaused, isRunRequested, writeScheduler } from "./control.js";
-import type { SchedulerSnapshot } from "./control.js";
+import type { RunRequest, SchedulerSnapshot } from "./control.js";
 import { nextRun } from "./schedule.js";
 
 export interface LoopState {
@@ -48,10 +48,10 @@ export interface ScheduleLoopDeps {
   timeZone: string;
   readHours: () => number[];
   readPaused: () => boolean;
-  consumeRunRequest: () => boolean;
+  consumeRunRequest: () => RunRequest | null;
   runPending: () => boolean;
   writeHeartbeat: (snapshot: SchedulerSnapshot) => void;
-  runOnce: () => Promise<number>;
+  runOnce: (request: RunRequest | null) => Promise<number>;
   log: (line: string) => void;
   /** 每次进入一段等待时抽一次，不在 5 秒滴答里重抽。 */
   offsetMinutes: () => number;
@@ -93,8 +93,8 @@ export async function runScheduleLoop(deps: ScheduleLoopDeps): Promise<void> {
       state = decision.next;
 
       if (decision.type === "run") {
-        if (decision.consumeRequest) deps.consumeRunRequest();
-        const code = await runRound();
+        const request = decision.consumeRequest ? deps.consumeRunRequest() : null;
+        const code = await runRound(request);
         if (code === 1) return;
         continue;
       }
@@ -123,11 +123,11 @@ export async function runScheduleLoop(deps: ScheduleLoopDeps): Promise<void> {
     stopHeartbeat();
   }
 
-  async function runRound(): Promise<number> {
+  async function runRound(request: RunRequest | null): Promise<number> {
     running = true;
     beat();
     try {
-      return await deps.runOnce();
+      return await deps.runOnce(request);
     } finally {
       running = false;
       beat();

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { loadConfig } from "./config.js";
+import { loadConfig, parseConfig, saveConfigObject, saveConfigText } from "./config.js";
 
 function writeConfig(text: string): string {
   const dir = mkdtempSync(join(tmpdir(), "cert-renew-"));
@@ -122,4 +122,45 @@ jobs:
   assert.equal(loaded.ok, false);
   if (loaded.ok) return;
   assert.match(loaded.error, /schedule\.hours/);
+});
+
+test("网页保存时单条任务不合法则整份拒绝", () => {
+  const path = writeConfig(`${header}
+jobs:
+  - id: ok
+    domains: [a.example.com]
+    challenge: { type: http-01 }
+  - id: bad
+    domains: ["*.example.com"]
+    challenge: { type: http-01 }
+`);
+  const saved = saveConfigText(path, readFileSync(path, "utf8"));
+  assert.equal(saved.ok, false);
+  if (saved.ok) return;
+  assert.match(saved.error, /dns-01/);
+});
+
+test("表单对象可以写成 YAML 再读回来", () => {
+  const path = writeConfig("jobs: []\n");
+  const saved = saveConfigObject(path, {
+    serverName: "origin-a",
+    letsencrypt: { email: "ops@example.com", staging: false, renewBeforeDays: 30, keyType: "ecdsa" },
+    alibaba: { regionId: "cn-hangzhou" },
+    schedule: { hours: [3, 15] },
+    jobs: [
+      {
+        id: "www",
+        enabled: true,
+        domains: ["example.com", "*.example.com"],
+        challenge: { type: "dns-01", zone: "example.com", propagationSeconds: 60 },
+        apply: [{ type: "aliyun-cdn", domainNames: ["www.example.com"] }],
+      },
+    ],
+  });
+  assert.equal(saved.ok, true);
+  const loaded = loadConfig(path);
+  assert.equal(loaded.ok, true);
+  if (!loaded.ok) return;
+  assert.equal(loaded.config.jobs[0].id, "www");
+  assert.equal(parseConfig(readFileSync(path, "utf8")).ok, true);
 });

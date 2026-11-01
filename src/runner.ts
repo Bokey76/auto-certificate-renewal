@@ -37,6 +37,7 @@ export async function runAll(input: {
   invalidJobs: InvalidJob[];
   dataDir: string;
   dryRun: boolean;
+  force?: boolean;
   onlyJob?: string;
   logger: Logger;
   deps: RunnerDeps;
@@ -93,6 +94,7 @@ async function runJob(job: JobConfig, input: Parameters<typeof runAll>[0]): Prom
   const failedApply = hasFailedApply(job, state);
   const needsIssue =
     input.dryRun ||
+    Boolean(input.force) ||
     !before ||
     withinRenewWindow(before.notAfter, input.config.letsencrypt.renewBeforeDays, now) ||
     Boolean(state.lastIssueError);
@@ -104,7 +106,7 @@ async function runJob(job: JobConfig, input: Parameters<typeof runAll>[0]): Prom
 
   let issued = false;
   if (needsIssue) {
-    logger.line(job.id, input.dryRun ? "开始 Certbot 演练" : "开始签发");
+    logger.line(job.id, input.dryRun ? "开始 Certbot 演练" : input.force ? "开始强制签发" : "开始签发");
     mkdirSync(join(input.dataDir, "dns-records"), { recursive: true });
     const result = await runCertbot(
       {

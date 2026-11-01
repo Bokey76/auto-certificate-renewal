@@ -30,9 +30,10 @@
 ```bash
 cp config/config.example.yaml config/config.yaml
 cp .env.example .env
+mkdir -p data
 ```
 
-编辑这两份文件：`config.yaml` 写域名、校验方式和应用动作，`.env` 写阿里云密钥和时区。密钥不要写进 YAML。
+编辑这两份文件：`config.yaml` 写域名、校验方式和应用动作（也可以启动后在网页里改），`.env` 写时区和可选的阿里云密钥。密钥不要写进 YAML，网页里填写的密钥写到 `config/credentials.json`。
 
 ```bash
 docker compose up -d --build
@@ -45,7 +46,7 @@ docker compose logs --tail=100 renew
 
 ## 服务器上不放源码
 
-在开发机构建镜像，推到自己的容器镜像服务。服务器上只放三份文件：`docker-compose.yml`、`config/config.yaml`、`.env`。`image` 写成仓库全名，去掉 `build: .`。
+在开发机构建镜像，推到自己的容器镜像服务。服务器上放 `docker-compose.yml`、`config/config.yaml`、`.env`，以及会在运行中生成的 `config/admins.json`、`config/credentials.json` 和 `data/`。`image` 写成仓库全名，去掉 `build: .`。
 
 登录、构建、推送和服务器上的 compose 示例见 [docs/使用.md](docs/使用.md)。构建架构要和服务器一致，常见 x86_64 用 `linux/amd64`。
 
@@ -102,7 +103,7 @@ ssl_certificate_key  /www/server/panel/vhost/cert/example.com/privkey.pem;
 
 默认命令是 `cert-renew schedule`：
 
-1. 未暂停时，容器每次启动先跑一轮。暂停记在数据卷里，重启后仍然有效，这时启动不跑。
+1. 未暂停时，容器每次启动先跑一轮。暂停记在 `data/` 里，重启后仍然有效，这时启动不跑。
 2. 按 `.env` 里的 `TZ`（默认 `Asia/Shanghai`）和 `schedule.hours`（默认 03:00、15:00）再跑。每次进入等待时随机加 0–30 分钟，多台机器错开。
 3. 配置读不了时进程退出，方便 compose 重启后重新读挂载。有任务失败时继续按时刻表跑。
 
@@ -120,21 +121,22 @@ ssl_certificate_key  /www/server/panel/vhost/cert/example.com/privkey.pem;
 | 立刻跑全部任务一次 | `docker compose run --rm --entrypoint cert-renew renew run` |
 | 只跑一条 | `docker compose run --rm --entrypoint cert-renew renew run --job <任务id>` |
 | 演练，不改 Nginx / CDN | `docker compose run --rm --entrypoint cert-renew renew run --dry-run` |
-| 停止并删除容器，保留数据卷 | `docker compose down` |
+| 强制续签 | `docker compose run --rm --entrypoint cert-renew renew run --force` |
+| 停止并删除容器，保留 `./data` | `docker compose down` |
 
 `docker compose up -d` 才是长期自动续签。单独的 `run` 多做一轮，跑完就退出，不会关掉正在跑的时刻表容器。时刻表正在写证书时，不要再开一个 `run`。
 
 `--dry-run` 不替换 Nginx、不调用 CDN、不跑钩子。DNS-01 演练时仍可能向阿里云解析写 TXT。
 
-不要执行 `docker compose down -v`。`-v` 会删除 `acme-data`，Let’s Encrypt 账户和已签证书一起丢失，下次签发可能撞上颁发配额。
+不要删除 `./data`。Let’s Encrypt 账户和已签证书在里面，弄丢后下次签发可能撞上颁发配额。以前用过命名卷 `acme-data` 的机器，把卷里的内容拷到 `./data` 再改 compose，步骤见 [docs/使用.md](docs/使用.md)。
 
 退出码：`0` 全部成功或跳过；`1` 配置读不了；`2` 至少一条任务失败。
 
 ## 状态网页
 
-同一台机器上还有一个 `web` 容器，打开 `http://127.0.0.1:8787`。口令是 `.env` 里的 `WEB_PASSWORD`，至少 12 位。页面看最近一轮、每张证书、Nginx 和 CDN 的结果，以及日志末尾。三个按钮是：立即检查、暂停定时检查、恢复定时检查。
+同一台机器上还有一个 `web` 容器，打开 `http://127.0.0.1:8787`。第一次打开会创建管理员（口令至少 12 位），账号写在 `config/admins.json`。之后可在网页里加人。
 
-立即检查仍受 `renewBeforeDays` 约束，证书还早就不会重新签发。网页不改配置，也不显示私钥。服务器上的打开方式和暂停规则见 [docs/使用.md](docs/使用.md)。
+页面可以：看最近一轮和日志末尾；用表单或 YAML 改 `config.yaml`；填写阿里云凭据；立即检查、只跑一条、演练、强制续签、暂停或恢复定时检查。立即检查仍受 `renewBeforeDays` 约束，勾选强制续签才会忽略窗口。网页不显示私钥和 AccessKey。服务器上的打开方式见 [docs/使用.md](docs/使用.md)。
 
 ## 确认是否生效
 
@@ -148,7 +150,7 @@ docker compose exec renew cat /var/lib/acme/state/www-example.json
 
 再到阿里云控制台核对证书名称和 CDN 域名上的 CertId。证书还很新时，时刻表只会记跳过。
 
-改域名或密钥：只改服务器上的 `config.yaml` 或 `.env`，然后 `docker compose up -d`。改程序才需要重新构建镜像。
+改域名：在网页保存配置，或改服务器上的 `config.yaml`。改密钥：在网页填写凭据，或改 `.env` 后 `docker compose up -d`。改程序才需要重新构建镜像。
 
 ## 文档
 
