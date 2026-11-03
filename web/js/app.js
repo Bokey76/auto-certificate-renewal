@@ -225,11 +225,14 @@ function el(tag, attrs, children) {
   return node;
 }
 
-function field(labelText, control) {
+function field(labelText, control, hint) {
   const wrap = document.createElement("div");
+  wrap.className = "field";
   const lab = document.createElement("label");
   lab.textContent = labelText;
-  wrap.append(lab, control);
+  wrap.append(lab);
+  if (hint) wrap.append(el("p", { class: "field-hint", text: hint }));
+  wrap.append(control);
   return wrap;
 }
 
@@ -297,11 +300,11 @@ function nginxCard(action, onChange) {
   const fullchain = el("input", { value: action.fullchainPath || "" });
   const privkey = el("input", { value: action.privkeyPath || "" });
   const bin = el("input", { value: action.nginxBin || "" });
-  const baotaDir = field("certDir", certDir);
-  const baotaFull = field("fullchainName", fullchainName);
-  const baotaKey = field("privkeyName", privkeyName);
-  const customFull = field("fullchainPath", fullchain);
-  const customKey = field("privkeyPath", privkey);
+  const baotaDir = field("certDir", certDir, "宝塔证书目录，例如 /www/server/panel/vhost/cert/example.com。不存在时会建出来。");
+  const baotaFull = field("fullchainName", fullchainName, "目录里的证书文件名，默认 fullchain.pem。");
+  const baotaKey = field("privkeyName", privkeyName, "目录里的私钥文件名，默认 privkey.pem。");
+  const customFull = field("fullchainPath", fullchain, "自装 Nginx 的证书完整路径。站点配置须事先指向这里。");
+  const customKey = field("privkeyPath", privkey, "自装 Nginx 的私钥完整路径。");
   const title = el("span", { class: "accordion-title", text: "Nginx" });
 
   function syncKind() {
@@ -316,13 +319,13 @@ function nginxCard(action, onChange) {
 
   const remove = iconButton("删除", "trash", "ghost");
   const item = makeAccordion(title, [remove], [
-    field("类型", kind),
+    field("类型", kind, "宝塔只替换证书目录里的文件；自装写入指定的 fullchain / privkey 路径。"),
     baotaDir,
     baotaFull,
     baotaKey,
     customFull,
     customKey,
-    field("nginxBin（宝塔可空，自装必填）", bin),
+    field("nginxBin", bin, "nginx 可执行文件。宝塔可空，自装必填。nginx -t 通过后才 reload。"),
   ]);
   item.dataset.type = "nginx";
   item._summary = () => (kind.value === "baota" ? certDir.value.trim() : fullchain.value.trim());
@@ -361,7 +364,7 @@ function cdnCard(action, onChange) {
   const title = el("span", { class: "accordion-title", text: "CDN" });
   const remove = iconButton("删除", "trash", "ghost");
   const item = makeAccordion(title, [remove], [
-    field("加速域名（逗号分隔）", domains),
+    field("加速域名（逗号分隔）", domains, "须已在 CDN 上存在并开通 HTTPS。每个名字必须被本证书覆盖。"),
   ]);
   item.dataset.type = "aliyun-cdn";
   item._summary = () => domains.value.trim();
@@ -399,9 +402,9 @@ function jobCard(job) {
   const hookWait = el("input", { type: "number", min: "1", value: String(job.hook?.timeoutSeconds ?? 60) });
   const title = el("span", { class: "accordion-title", text: jobTitle(job.id, (job.domains || []).join(", ")) });
   const applyList = el("div", { class: "accordion-stack nested" });
-  const zoneField = field("zone", zone);
-  const webrootField = field("webroot", webroot);
-  const waitField = field("DNS 等待秒", wait);
+  const zoneField = field("zone", zone, "阿里云解析里的主域名，程序不猜根域。本任务所有名字都必须在这个 zone 下。");
+  const webrootField = field("webroot", webroot, "校验文件写入的目录，默认 /var/www/acme。须已挂进容器，Nginx 能用 HTTP 提供。");
+  const waitField = field("DNS 等待秒", wait, "最后一个 TXT 写完后等待的秒数，0–3600，默认 60。");
 
   function syncChallenge() {
     const dns = challenge.value === "dns-01";
@@ -444,19 +447,19 @@ function jobCard(job) {
   const remove = iconButton("删除任务", "trash", "danger");
   const item = makeAccordion(title, [enabledLabel], [
     el("div", { class: "grid" }, [
-      field("任务 id", id),
-      field("域名（逗号分隔）", domains),
-      field("校验", challenge),
+      field("任务 id", id, "1–40 位小写字母、数字、连字符，不能以连字符开头或结尾。同时是证书名。"),
+      field("域名（逗号分隔）", domains, "至少一个，写在同一张证书上。泛域名写成 *.example.com，必须用 dns-01。"),
+      field("校验", challenge, "dns-01 写阿里云 TXT；http-01 走源站 80 端口。有泛域名必须 dns-01。"),
       zoneField,
       webrootField,
       waitField,
-      field("凭据名", credential),
-      field("签发后命令", hook),
-      field("命令超时秒", hookWait),
+      field("凭据名", credential, "对应凭据页的名字，缺省 default。只含字母和数字。"),
+      field("签发后命令", hook, "仅本轮真正写出新证书后，在容器内用 /bin/sh -c 执行。可空。"),
+      field("命令超时秒", hookWait, "1–300，默认 60。失败不回滚已经完成的 Nginx / CDN。"),
     ]),
     el("div", { class: "row" }, [addNginx, addCdn]),
     applyList,
-    remove,
+    el("div", { class: "job-remove" }, [remove]),
   ]);
   remove.addEventListener("click", () => item.remove());
   item._collect = () => ({

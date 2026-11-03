@@ -97,35 +97,44 @@
             </div>
             <div class="accordion-body">
               <div class="grid">
-                <div>
+                <div class="field">
                   <label for="serverName">机器名</label>
+                  <p class="field-hint">写进状态页，用来识别这台机器。可空，默认用主机名。</p>
                   <input id="serverName">
                 </div>
-                <div>
+                <div class="field">
                   <label for="email">Let’s Encrypt 邮箱</label>
+                  <p class="field-hint">注册账号用，必须含 @。</p>
                   <input id="email">
                 </div>
-                <div>
+                <div class="field">
                   <label for="regionId">阿里云地域</label>
+                  <p class="field-hint">数字证书和 CDN API 使用的地域。默认 cn-shenzhen。</p>
                   <input id="regionId">
                 </div>
-                <div>
+                <div class="field">
                   <label for="hours">检查小时（逗号分隔）</label>
+                  <p class="field-hint">时区内每天检查的小时，0–23。默认 3,15。每次会再随机加 0–30 分钟。</p>
                   <input id="hours" placeholder="3,15">
                 </div>
-                <div>
+                <div class="field">
                   <label for="renewBeforeDays">提前续签天数</label>
+                  <p class="field-hint">剩余有效期少于此天数（含）才签发。默认 30。</p>
                   <input id="renewBeforeDays" type="number" min="1">
                 </div>
-                <div>
+                <div class="field">
                   <label for="keyType">私钥类型</label>
+                  <p class="field-hint">整份配置共用。ecdsa 证书更短；旧客户端不支持时再选 rsa。</p>
                   <select id="keyType">
                     <option value="ecdsa">ecdsa</option>
                     <option value="rsa">rsa</option>
                   </select>
                 </div>
               </div>
-              <label class="check"><input id="staging" type="checkbox"> Let’s Encrypt 测试环境</label>
+              <div class="field">
+                <label class="check"><input id="staging" type="checkbox"> Let’s Encrypt 测试环境</label>
+                <p class="field-hint">测试证书不被浏览器信任，用来联调。正式签发不要勾。</p>
+              </div>
             </div>
           </div>
           <div class="accordion open" id="jobs-block">
@@ -199,23 +208,39 @@
       <h2 id="dialog-title"></h2>
       <form id="dialog-form">
         <div id="dialog-cred" class="dialog-panel">
-          <label for="dialog-cred-name">名字</label>
-          <input id="dialog-cred-name" placeholder="default 或 prod" autocomplete="off">
-          <label for="dialog-cred-id">AccessKeyId</label>
-          <input id="dialog-cred-id" autocomplete="off">
-          <label for="dialog-cred-secret">AccessKeySecret</label>
-          <input id="dialog-cred-secret" type="password" autocomplete="new-password">
+          <div class="field">
+            <label for="dialog-cred-name">名字</label>
+            <p class="field-hint">任务里的 credential 对应该名字，缺省 default。只含字母和数字。</p>
+            <input id="dialog-cred-name" placeholder="default 或 prod" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="dialog-cred-id">AccessKeyId</label>
+            <p class="field-hint">阿里云 RAM 用户的 AccessKey。页面不回显已保存的值。</p>
+            <input id="dialog-cred-id" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="dialog-cred-secret">AccessKeySecret</label>
+            <p class="field-hint">填写后覆盖文件里已保存的密钥。不要写进 YAML。</p>
+            <input id="dialog-cred-secret" type="password" autocomplete="new-password">
+          </div>
           <p id="dialog-cred-hint" class="muted"></p>
         </div>
         <div id="dialog-admin" class="dialog-panel">
-          <label for="dialog-admin-name">用户名</label>
-          <input id="dialog-admin-name" autocomplete="off">
-          <div id="dialog-admin-current-wrap">
+          <div class="field">
+            <label for="dialog-admin-name">用户名</label>
+            <p class="field-hint">1–40 位字母、数字、下划线或连字符，不能以下划线或连字符开头或结尾。</p>
+            <input id="dialog-admin-name" autocomplete="off">
+          </div>
+          <div id="dialog-admin-current-wrap" class="field">
             <label for="dialog-admin-current">当前口令</label>
+            <p class="field-hint">改自己的口令时需要核对当前口令。</p>
             <input id="dialog-admin-current" type="password" autocomplete="current-password">
           </div>
-          <label for="dialog-admin-password">口令</label>
-          <input id="dialog-admin-password" type="password" autocomplete="new-password">
+          <div class="field">
+            <label for="dialog-admin-password">口令</label>
+            <p class="field-hint">至少 12 位。</p>
+            <input id="dialog-admin-password" type="password" autocomplete="new-password">
+          </div>
         </div>
         <p id="dialog-error" class="bad"></p>
         <div class="actions">
