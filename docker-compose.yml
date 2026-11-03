@@ -1,5 +1,6 @@
-# 在这台机器上对着 Dockerfile 构建时保留 build 和下面的本地 tag。
-# 本机构建并推到阿里云容器镜像服务时：image 改成仓库全名，删掉 build。步骤见 docs/使用.md。
+# 本机对着 Dockerfile 构建时用这一份（image: local + build: .）。
+# 服务器拉镜像跑：复制 docs/docker-compose.server.yml 为 docker-compose.yml，
+# image 写成仓库全名，不要写 build。步骤见 docs/使用.md。
 services:
   renew:
     image: auto-certificate-renewal:local

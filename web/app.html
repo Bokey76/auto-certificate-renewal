@@ -77,9 +77,12 @@
         <div class="log-toolbar">
           <label for="log-file">查看</label>
           <select id="log-file"></select>
+          <button id="log-more" type="button" class="secondary" disabled>加载更多</button>
+          <button id="log-download" type="button" class="secondary" disabled>下载本文件</button>
         </div>
       </div>
-      <p class="muted">每轮一个文件。选更早的一轮可看当时的记录；选带「本轮」的会跟着最新文件走。每份只显示末尾约 200 行。</p>
+      <p class="muted">每轮一个文件。选更早的一轮可看当时的记录；选带「本轮」的会跟着最新文件走。默认末尾 200 行，加载更多每次再往前 500 行。</p>
+      <p id="log-message" class="note"></p>
       <pre id="log" class="log"></pre>
     </section>
 

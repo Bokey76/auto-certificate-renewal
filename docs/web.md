@@ -49,7 +49,14 @@ node dist/cli.js web
 | `src/` 下的 TypeScript | 再执行 `npm.cmd run build`，停掉 `web` 后重新 `node dist/cli.js web` |
 | 逻辑是否正确 | `npm.cmd test`（不访问 Let’s Encrypt 和阿里云） |
 
-网页上的「立即检查」只给时刻表进程留一张请求。本机没有 Linux 的 `renew` 容器时，请求会写在 `data/control/run-request`，不会真正签发。
+`npm test` 把日志写到临时目录，不会出现在 `data/logs/`。`node dist/cli.js web` 只起控制台，不会跑 Certbot，也就不会产生新的一轮日志。状态页要看到「加载更多 / 下载」，`data/logs/` 里需要已有 `.log` 文件：从服务器拷 `data/logs/`，或在本机造一份（250 行以上才能点「加载更多」）：
+
+```powershell
+New-Item -ItemType Directory -Force data\logs | Out-Null
+node -e "const fs=require('fs');const p='data/logs';fs.mkdirSync(p,{recursive:true});const n='2026-11-03T03-00-00.000Z.log';const lines=Array.from({length:250},(_,i)=>'2026-11-03T03:00:00.000Z [-] line-'+String(i+1).padStart(3,'0'));fs.writeFileSync(p+'/'+n,lines.join('\n')+'\n');fs.writeFileSync('data/status.json',JSON.stringify({serverName:'origin-a',startedAt:'2026-11-03T03:00:00.000Z',finishedAt:'2026-11-03T03:00:02.000Z',exitCode:0,logPath:require('path').resolve(p,n),jobs:[]},null,2)+'\n');"
+```
+
+造完后刷新状态页。网页上的「立即检查」只给时刻表进程留一张请求。本机没有 Linux 的 `renew` 容器时，请求会写在 `data/control/run-request`，不会真正签发。
 
 本机直接打开 `http://127.0.0.1:8787`，不要设 `WEB_COOKIE_SECURE=true`。
 
@@ -75,7 +82,7 @@ node dist/cli.js web
 
 状态页大约每 5 秒刷新一次。切到其它标签时才拉对应数据。
 
-日志在 `data/logs/`，每轮一个文件。状态下拉列出最近 50 个，标签是该轮开始时刻。默认看本轮（`status.json` 指向的那份），内容随刷新更新。选更早的文件后会钉住，不会被 5 秒刷新拉回本轮；那份文件从列表消失时才回到本轮。每份只显示末尾约 200 行（最多 64KB）。网页只按裸文件名读 `logs/` 里的 `.log`，不能指定路径。
+日志在 `data/logs/`，每轮一个文件。状态下拉列出最近 50 个，标签是该轮开始时刻。默认看本轮（`status.json` 指向的那份），内容随刷新更新。选更早的文件后会钉住，不会被 5 秒刷新拉回本轮；那份文件从列表消失时才回到本轮。默认显示末尾 200 行；「加载更多」每次再往前 500 行，可以一直加到文件开头。「下载本文件」拿到全文。网页只按裸文件名读 `logs/` 里的 `.log`，不能指定路径。
 
 表单保存会重排 YAML，原文注释不会保留。要留注释用 YAML 页。校验失败时不会写盘，页面会显示原因。
 

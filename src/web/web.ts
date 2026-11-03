@@ -17,7 +17,7 @@ import {
 import { configDocument, loadConfig, readConfigText, saveConfigObject, saveConfigText } from "../config/config.js";
 import { deleteCredential, listCredentialViews, upsertCredential } from "../config/credentials.js";
 import { isPaused, isRunRequested, readScheduler, requestRun, schedulerOnline, setPaused } from "../schedule/control.js";
-import { isLogName, loadOverview, readLogByName } from "./overview.js";
+import { isLogName, loadOverview, parseLogTail, readLogByName, readLogDownload } from "./overview.js";
 
 const LOGIN_BODY_LIMIT = 1024;
 const BODY_LIMIT = 256 * 1024;
@@ -143,7 +143,26 @@ export function startWeb(options: WebOptions): Promise<WebServer> {
         sendJson(res, 400, { ok: false, error: "日志路径不合法" });
         return;
       }
-      sendJson(res, 200, readLogByName(options.dataDir, name));
+      if (url.searchParams.get("download") === "1") {
+        const file = readLogDownload(options.dataDir, name);
+        if (!file.ok) {
+          sendJson(res, file.status, { ok: false, error: file.error });
+          return;
+        }
+        res.writeHead(200, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${file.name}"`,
+          "Cache-Control": "no-store",
+        });
+        res.end(file.text);
+        return;
+      }
+      const tail = parseLogTail(url.searchParams.get("tail"));
+      if (typeof tail !== "number") {
+        sendJson(res, 400, { ok: false, error: tail.error });
+        return;
+      }
+      sendJson(res, 200, readLogByName(options.dataDir, name, tail));
       return;
     }
     if (method === "GET" && url.pathname === "/api/config/raw") {

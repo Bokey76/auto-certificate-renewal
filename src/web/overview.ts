@@ -8,7 +8,9 @@ import { isPaused, isRunRequested, readRunRequest, readScheduler, schedulerOnlin
 import type { ApplyAction, JobConfig, JobRunResult, JobState, StatusFile } from "../lib/types.js";
 
 const LOG_TAIL_LINES = 200;
-const LOG_TAIL_BYTES = 64 * 1024;
+const LOG_TAIL_MAX_LINES = 20_000;
+const LOG_DOWNLOAD_MAX_BYTES = 8 * 1024 * 1024;
+const LOG_READ_CHUNK = 64 * 1024;
 const LOG_LIST_LIMIT = 50;
 const LOG_NAME = /^[A-Za-z0-9._-]+\.log$/;
 const JOB_ID = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
@@ -87,6 +89,7 @@ export interface OverviewLog {
   lines: string[];
   missing: boolean;
   message: string | null;
+  hasMore: boolean;
 }
 
 export interface LogFileView {
@@ -126,7 +129,7 @@ export function loadOverview(input: { dataDir: string; configPath: string; now: 
   const current = currentLogName(input.dataDir, status?.logPath);
   const files = listLogFiles(input.dataDir, current, input.timeZone);
   const log: OverviewLog = statusRead.error
-    ? { name: current, lines: [], missing: true, message: statusRead.error }
+    ? emptyLog(statusRead.error, current)
     : current
       ? readLogByName(input.dataDir, current)
       : { name: null, ...readLogTail(input.dataDir, status?.logPath) };
@@ -168,56 +171,110 @@ export function loadOverview(input: { dataDir: string; configPath: string; now: 
   };
 }
 
+/** 网页 `tail` 查询。缺省 200 行，上限 20000。 */
+export function parseLogTail(raw: string | null): number | { error: string } {
+  if (raw == null || raw === "") return LOG_TAIL_LINES;
+  if (!/^[1-9][0-9]{0,6}$/.test(raw)) return { error: "tail 必须是正整数" };
+  return Math.min(Number(raw), LOG_TAIL_MAX_LINES);
+}
+
 /** 只读 status.json 指向的、且落在数据目录 logs/ 下的文件末尾。 */
-export function readLogTail(dataDir: string, logPath: string | undefined): { lines: string[]; missing: boolean; message: string | null } {
-  if (!logPath) return { lines: [], missing: true, message: "还没有日志" };
+export function readLogTail(
+  dataDir: string,
+  logPath: string | undefined,
+  lineLimit = LOG_TAIL_LINES,
+): { lines: string[]; missing: boolean; message: string | null; hasMore: boolean } {
+  const located = locateLogFile(dataDir, logPath);
+  if (!located.ok) return { lines: [], missing: true, message: located.message, hasMore: false };
+  return { ...readLastLines(located.file, located.size, lineLimit), missing: false, message: null };
+}
+
+/** 按裸文件名读 logs/ 下某一文件末尾。非法名字不读盘。 */
+export function readLogByName(dataDir: string, name: string, lineLimit = LOG_TAIL_LINES): OverviewLog {
+  if (!isLogName(name)) return emptyLog("日志路径不合法");
+  const tail = readLogTail(dataDir, join(dataDir, "logs", name), lineLimit);
+  return { name, ...tail };
+}
+
+/** 下载整个日志文件。只允许 logs/ 下的裸文件名。 */
+export function readLogDownload(
+  dataDir: string,
+  name: string,
+): { ok: true; name: string; text: string } | { ok: false; error: string; status: 400 | 404 | 413 } {
+  if (!isLogName(name)) return { ok: false, error: "日志路径不合法", status: 400 };
+  const located = locateLogFile(dataDir, join(dataDir, "logs", name));
+  if (!located.ok) {
+    const status = located.message === "日志路径不合法" ? 400 : 404;
+    return { ok: false, error: located.message, status };
+  }
+  if (located.size > LOG_DOWNLOAD_MAX_BYTES) {
+    return { ok: false, error: "日志文件过大，请在服务器上查看 data/logs/", status: 413 };
+  }
+  return { ok: true, name, text: readFileSync(located.file, "utf8") };
+}
+
+function emptyLog(message: string, name: string | null = null): OverviewLog {
+  return { name, lines: [], missing: true, message, hasMore: false };
+}
+
+function locateLogFile(
+  dataDir: string,
+  logPath: string | undefined,
+): { ok: true; file: string; size: number } | { ok: false; message: string } {
+  if (!logPath) return { ok: false, message: "还没有日志" };
   const logsDir = join(dataDir, "logs");
   let root: string;
   try {
     root = realpathSync(logsDir);
   } catch {
-    return { lines: [], missing: true, message: "日志文件不在" };
+    return { ok: false, message: "日志文件不在" };
   }
   let file: string;
   try {
     file = realpathSync(logPath);
   } catch {
-    return insideDir(root, resolveInside(logPath))
-      ? { lines: [], missing: true, message: "日志文件不在" }
-      : { lines: [], missing: true, message: "日志路径不合法" };
+    return { ok: false, message: insideDir(root, resolveInside(logPath)) ? "日志文件不在" : "日志路径不合法" };
   }
-  if (!insideDir(root, file)) return { lines: [], missing: true, message: "日志路径不合法" };
-  let size = 0;
+  if (!insideDir(root, file)) return { ok: false, message: "日志路径不合法" };
   try {
     const info = statSync(file);
-    if (!info.isFile()) return { lines: [], missing: true, message: "日志路径不合法" };
-    size = info.size;
+    if (!info.isFile()) return { ok: false, message: "日志路径不合法" };
+    return { ok: true, file, size: info.size };
   } catch {
-    return { lines: [], missing: true, message: "日志文件不在" };
-  }
-  const start = Math.max(0, size - LOG_TAIL_BYTES);
-  const fd = openSync(file, "r");
-  try {
-    const buf = Buffer.alloc(size - start);
-    readSync(fd, buf, 0, buf.length, start);
-    let text = buf.toString("utf8");
-    if (start > 0) {
-      const newline = text.indexOf("\n");
-      text = newline === -1 ? "" : text.slice(newline + 1);
-    }
-    const lines = text.split(/\r?\n/);
-    if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-    return { lines: lines.slice(-LOG_TAIL_LINES), missing: false, message: null };
-  } finally {
-    closeSync(fd);
+    return { ok: false, message: "日志文件不在" };
   }
 }
 
-/** 按裸文件名读 logs/ 下某一文件末尾。非法名字不读盘。 */
-export function readLogByName(dataDir: string, name: string): OverviewLog {
-  if (!isLogName(name)) return { name: null, lines: [], missing: true, message: "日志路径不合法" };
-  const tail = readLogTail(dataDir, join(dataDir, "logs", name));
-  return { name, ...tail };
+function readLastLines(file: string, size: number, lineLimit: number): { lines: string[]; hasMore: boolean } {
+  if (size === 0 || lineLimit <= 0) return { lines: [], hasMore: false };
+  const fd = openSync(file, "r");
+  try {
+    let pos = size;
+    const chunks: Buffer[] = [];
+    let newlines = 0;
+    while (pos > 0) {
+      const n = Math.min(LOG_READ_CHUNK, pos);
+      pos -= n;
+      const buf = Buffer.alloc(n);
+      readSync(fd, buf, 0, n, pos);
+      chunks.unshift(buf);
+      for (let i = 0; i < buf.length; i += 1) {
+        if (buf[i] === 10) newlines += 1;
+      }
+      if (newlines > lineLimit) break;
+    }
+    let text = Buffer.concat(chunks).toString("utf8");
+    const startedMidFile = pos > 0;
+    if (startedMidFile) {
+      const nl = text.indexOf("\n");
+      text = nl === -1 ? "" : text.slice(nl + 1);
+    }
+    const lines = text.split(/\r?\n/);
+    if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+    return { lines: lines.slice(-lineLimit), hasMore: startedMidFile || lines.length > lineLimit };
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /** 列出 logs/ 下最近的日志文件，新的在前。最多 50 个。 */

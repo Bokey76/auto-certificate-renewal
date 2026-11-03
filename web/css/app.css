@@ -136,6 +136,7 @@ td.row-actions { white-space: nowrap; text-align: right; width: 1%; }
   min-width: 240px;
   max-width: min(100%, 420px);
 }
+.log-toolbar button { padding: 6px 12px; }
 pre.log {
   background: #0f1720;
   color: #e7eef5;

@@ -230,9 +230,37 @@ test("登录后可以按文件名读历史日志，不能逃出 logs", async () 
 
     const older = await fetch(`${started.base}/api/logs?name=2026-10-30T02-00-00.000Z.log`, { headers: { cookie: loggedIn.cookie } });
     assert.equal(older.status, 200);
-    const body = await older.json() as { name: string; lines: string[] };
+    const body = await older.json() as { name: string; lines: string[]; hasMore: boolean };
     assert.equal(body.name, "2026-10-30T02-00-00.000Z.log");
     assert.deepEqual(body.lines, ["older-round"]);
+    assert.equal(body.hasMore, false);
+
+    const many = Array.from({ length: 250 }, (_, i) => `line-${i + 1}`);
+    writeFileSync(join(data, "logs", "2026-10-30T02-00-00.000Z.log"), `${many.join("\n")}\n`, "utf8");
+    const page = await fetch(`${started.base}/api/logs?name=2026-10-30T02-00-00.000Z.log`, { headers: { cookie: loggedIn.cookie } });
+    const pageBody = await page.json() as { lines: string[]; hasMore: boolean };
+    assert.equal(pageBody.lines.length, 200);
+    assert.equal(pageBody.hasMore, true);
+    assert.equal(pageBody.lines[0], "line-51");
+    const extra = await fetch(`${started.base}/api/logs?name=2026-10-30T02-00-00.000Z.log&tail=700`, { headers: { cookie: loggedIn.cookie } });
+    const extraBody = await extra.json() as { lines: string[]; hasMore: boolean };
+    assert.equal(extraBody.lines.length, 250);
+    assert.equal(extraBody.hasMore, false);
+
+    const badTail = await fetch(`${started.base}/api/logs?name=2026-10-30T02-00-00.000Z.log&tail=0`, { headers: { cookie: loggedIn.cookie } });
+    assert.equal(badTail.status, 400);
+
+    const download = await fetch(`${started.base}/api/logs?name=2026-10-30T02-00-00.000Z.log&download=1`, { headers: { cookie: loggedIn.cookie } });
+    assert.equal(download.status, 200);
+    assert.match(download.headers.get("content-type") ?? "", /text\/plain/);
+    assert.match(download.headers.get("content-disposition") ?? "", /attachment; filename="2026-10-30T02-00-00.000Z.log"/);
+    assert.equal(await download.text(), `${many.join("\n")}\n`);
+
+    const steal = await fetch(`${started.base}/api/logs?name=${encodeURIComponent("../secret.txt")}&download=1`, {
+      headers: { cookie: loggedIn.cookie },
+    });
+    assert.equal(steal.status, 400);
+    assert.equal(JSON.stringify(await steal.json()).includes("SECRETPEM"), false);
 
     const traversal = await fetch(`${started.base}/api/logs?name=${encodeURIComponent("../secret.txt")}`, {
       headers: { cookie: loggedIn.cookie },

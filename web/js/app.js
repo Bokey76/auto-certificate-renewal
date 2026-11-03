@@ -10,7 +10,11 @@ let dialogAdminMe = "";
 let followCurrent = true;
 let selectedLog = "";
 let lastOverview = null;
-let logCache = { name: "", text: "" };
+let logCache = { name: "", text: "", tail: 0, hasMore: false };
+const LOG_PAGE = 200;
+const LOG_MORE = 500;
+let logWantedLines = LOG_PAGE;
+let logHasMore = false;
 
 function text(id, value) {
   document.getElementById(id).textContent = value || "";
@@ -70,9 +74,12 @@ function fillLogSelect(view) {
   const select = document.getElementById("log-file");
   const files = (view.logs && view.logs.files) || [];
   const current = currentLogName(view);
-  if (followCurrent) selectedLog = current;
-  else if (selectedLog && !files.some((file) => file.name === selectedLog)) {
+  if (followCurrent) {
+    if (selectedLog && selectedLog !== current) resetLogWindow();
+    selectedLog = current;
+  } else if (selectedLog && !files.some((file) => file.name === selectedLog)) {
     followCurrent = true;
+    resetLogWindow();
     selectedLog = current;
   }
   select.replaceChildren();
@@ -83,6 +90,7 @@ function fillLogSelect(view) {
     select.appendChild(opt);
     select.disabled = true;
     selectedLog = "";
+    resetLogWindow();
     return;
   }
   select.disabled = false;
@@ -96,28 +104,63 @@ function fillLogSelect(view) {
   selectedLog = select.value;
 }
 
+function resetLogWindow() {
+  logWantedLines = LOG_PAGE;
+  logHasMore = false;
+  logCache = { name: "", text: "", tail: 0, hasMore: false };
+}
+
+function syncLogButtons() {
+  document.getElementById("log-more").disabled = !selectedLog || !logHasMore;
+  document.getElementById("log-download").disabled = !selectedLog;
+}
+
+function applyLogBody(body) {
+  const log = document.getElementById("log");
+  const text = (body.lines && body.lines.join("\n")) || body.message || "还没有日志";
+  logHasMore = Boolean(body.hasMore);
+  const fromBottom = log.scrollHeight - log.scrollTop;
+  log.textContent = text;
+  log.scrollTop = Math.max(0, log.scrollHeight - fromBottom);
+  syncLogButtons();
+}
+
 async function renderLog(view) {
   fillLogSelect(view);
   const log = document.getElementById("log");
   const name = selectedLog;
   const current = currentLogName(view);
-  if (!name || name === current) {
-    logCache = { name: "", text: "" };
-    log.textContent = (view.log && (view.log.lines.join("\n") || view.log.message)) || "还没有日志";
+  if (!name) {
+    log.textContent = "还没有日志";
+    logHasMore = false;
+    syncLogButtons();
     return;
   }
-  if (logCache.name === name) {
+  const follow = name === current;
+  if (follow && logWantedLines === LOG_PAGE && view.log) {
+    applyLogBody(view.log);
+    return;
+  }
+  if (!follow && logCache.name === name && logCache.tail === logWantedLines) {
     log.textContent = logCache.text;
+    logHasMore = logCache.hasMore;
+    syncLogButtons();
     return;
   }
   try {
-    const body = await api(`/api/logs?name=${encodeURIComponent(name)}`);
+    const body = await api(`/api/logs?name=${encodeURIComponent(name)}&tail=${logWantedLines}`);
     if (selectedLog !== name) return;
-    logCache = { name, text: (body.lines && body.lines.join("\n")) || body.message || "" };
-    log.textContent = logCache.text;
+    logCache = {
+      name,
+      text: (body.lines && body.lines.join("\n")) || body.message || "",
+      tail: logWantedLines,
+      hasMore: Boolean(body.hasMore),
+    };
+    applyLogBody(body);
   } catch (err) {
     if (selectedLog !== name) return;
     if (err.message !== "unauthorized") log.textContent = "日志没有读到。";
+    syncLogButtons();
   }
 }
 
@@ -168,8 +211,44 @@ document.getElementById("log-file").addEventListener("change", () => {
   selectedLog = select.value;
   const current = lastOverview ? currentLogName(lastOverview) : "";
   followCurrent = !selectedLog || selectedLog === current;
-  logCache = { name: "", text: "" };
+  resetLogWindow();
+  text("log-message", "");
   if (lastOverview) void renderLog(lastOverview);
+});
+
+document.getElementById("log-more").addEventListener("click", () => {
+  if (!selectedLog || !logHasMore) return;
+  logWantedLines += LOG_MORE;
+  logCache = { name: "", text: "", tail: 0, hasMore: false };
+  if (lastOverview) void renderLog(lastOverview);
+});
+
+document.getElementById("log-download").addEventListener("click", async () => {
+  if (!selectedLog) return;
+  text("log-message", "");
+  try {
+    const res = await fetch(`/api/logs?name=${encodeURIComponent(selectedLog)}&download=1`, {
+      headers: { "x-csrf-token": csrf },
+    });
+    if (res.status === 401) {
+      text("log-message", "登录已失效，请刷新页面。");
+      return;
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      text("log-message", body.error || "日志没有下载到。");
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = selectedLog;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    text("log-message", "日志没有下载到。");
+  }
 });
 
 async function act(path, body) {

@@ -5,7 +5,8 @@
 | 文档 | 内容 |
 | --- | --- |
 | [配置.md](配置.md) | 配置文件放哪、每个字段怎么写、`.env` 密钥 |
-| [使用.md](使用.md) | 本机构建推镜像、服务器启动、时刻表、命令、怎么确认续签和 CDN |
+| [使用.md](使用.md) | 本机构建推镜像、服务器第一次跑（复制 docker-compose.server.yml）、时刻表、命令、怎么确认续签和 CDN |
+| [docker-compose.server.yml](docker-compose.server.yml) | 服务器拉镜像用的 compose：无 `build`，含 `renew` 和 `web` |
 | [web.md](web.md) | 控制台怎么打开、页面能做什么、命令行对照、Windows 本机调试 |
 | [执行流程.md](执行流程.md) | 根据什么做决定、一轮做什么、Nginx / 阿里云怎么换证 |
 | [源码.md](源码.md) | 模块职责、每个导出函数做什么 |

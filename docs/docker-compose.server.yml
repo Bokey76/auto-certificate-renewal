@@ -1,0 +1,36 @@
+# 服务器用这一份：复制到放配置的目录，改名为 docker-compose.yml。
+# image 写成开发机 push 上去的全名，不要写 build。
+# 本机对着仓库构建时用仓库根目录的 docker-compose.yml。
+#
+# 没有 Nginx、只做 DNS-01 / CDN 时，删掉 volumes 里这两行：
+#   /www/server/panel/vhost/cert  （宝塔证书目录）
+#   /var/www/acme                 （HTTP-01 webroot）
+# 自装 Nginx 把 fullchainPath / privkeyPath 所在目录挂进来，替换宝塔那一行。
+# web 只绑 127.0.0.1，不要改成 0.0.0.0。
+
+services:
+  renew:
+    image: <ACR域名>/<命名空间>/auto-certificate-renewal:0.1.0
+    command: ["cert-renew", "schedule"]
+    pid: host
+    privileged: true
+    env_file:
+      - .env
+    volumes:
+      - ./config:/config
+      - ./data:/var/lib/acme
+      - /www/server/panel/vhost/cert:/www/server/panel/vhost/cert
+      - /var/www/acme:/var/www/acme
+    restart: unless-stopped
+
+  web:
+    image: <ACR域名>/<命名空间>/auto-certificate-renewal:0.1.0
+    command: ["cert-renew", "web"]
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - ./config:/config
+      - ./data:/var/lib/acme
+    restart: unless-stopped

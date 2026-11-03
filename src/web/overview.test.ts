@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { writeScheduler } from "../schedule/control.js";
-import { listLogFiles, loadOverview, readLogByName, readLogTail } from "./overview.js";
+import { listLogFiles, loadOverview, parseLogTail, readLogByName, readLogDownload, readLogTail } from "./overview.js";
 
 const now = new Date("2026-10-30T03:00:00.000Z");
 const zone = "Asia/Shanghai";
@@ -198,6 +198,49 @@ test("日志列表按文件名新到旧，按名字读历史文件，不能逃�
 
   const dir = readLogByName(data, "subdir.log");
   assert.equal(dir.message, "日志路径不合法");
+  assert.equal(dir.hasMore, false);
+});
+
+test("日志末尾按行数截取，加载更多能往前取，下载是全文", () => {
+  const data = mkdtempSync(join(tmpdir(), "overview-tail-"));
+  mkdirSync(join(data, "logs"));
+  const lines = Array.from({ length: 250 }, (_, i) => `line-${String(i + 1).padStart(3, "0")}`);
+  writeFileSync(join(data, "logs", "round.log"), `${lines.join("\n")}\n`, "utf8");
+
+  const first = readLogByName(data, "round.log");
+  assert.equal(first.hasMore, true);
+  assert.equal(first.lines.length, 200);
+  assert.equal(first.lines[0], "line-051");
+  assert.equal(first.lines[199], "line-250");
+
+  const more = readLogByName(data, "round.log", 700);
+  assert.equal(more.hasMore, false);
+  assert.equal(more.lines.length, 250);
+  assert.deepEqual(more.lines, lines);
+
+  const file = readLogDownload(data, "round.log");
+  assert.equal(file.ok, true);
+  if (file.ok) {
+    assert.equal(file.name, "round.log");
+    assert.equal(file.text, `${lines.join("\n")}\n`);
+  }
+
+  const escaped = readLogDownload(data, "../secret.txt");
+  assert.equal(escaped.ok, false);
+  if (!escaped.ok) {
+    assert.equal(escaped.status, 400);
+    assert.equal(escaped.error, "日志路径不合法");
+  }
+
+  const missing = readLogDownload(data, "gone.log");
+  assert.equal(missing.ok, false);
+  if (!missing.ok) assert.equal(missing.status, 404);
+
+  assert.equal(parseLogTail(null), 200);
+  assert.equal(parseLogTail("700"), 700);
+  assert.equal(parseLogTail("9999999"), 20000);
+  assert.equal((parseLogTail("0") as { error: string }).error, "tail 必须是正整数");
+  assert.equal((parseLogTail("-1") as { error: string }).error, "tail 必须是正整数");
 });
 
 test("status.json 里的日志路径不在本机时仍按文件名读 logs", () => {

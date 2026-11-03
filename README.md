@@ -46,9 +46,9 @@ docker compose logs --tail=100 renew
 
 ## 服务器上不放源码
 
-在开发机构建镜像，推到自己的容器镜像服务。服务器上放 `docker-compose.yml`、`config/config.yaml`、`.env`，以及会在运行中生成的 `config/admins.json`、`config/credentials.json` 和 `data/`。`image` 写成仓库全名，去掉 `build: .`。
+在开发机构建镜像，推到自己的容器镜像服务。服务器上放从 [docs/docker-compose.server.yml](docs/docker-compose.server.yml) 复制来的 `docker-compose.yml`（两处 `image` 写成仓库全名）、`config/config.yaml`、`.env` 和空的 `data/`。`config/admins.json`、`config/credentials.json` 第一次打开网页时生成。仓库根目录那份 `docker-compose.yml` 带 `build: .`，只给本机构建用。
 
-登录、构建、推送和服务器上的 compose 示例见 [docs/使用.md](docs/使用.md)。构建架构要和服务器一致，常见 x86_64 用 `linux/amd64`。
+登录、构建、推送和第一次跑的步骤见 [docs/使用.md](docs/使用.md)。构建架构要和服务器一致，常见 x86_64 用 `linux/amd64`。
 
 ## 配置示例
 
@@ -97,7 +97,14 @@ ssl_certificate      /www/server/panel/vhost/cert/example.com/fullchain.pem;
 ssl_certificate_key  /www/server/panel/vhost/cert/example.com/privkey.pem;
 ```
 
-只做 DNS-01 和 CDN、这台机器没有 Nginx 时，从 compose 里去掉证书目录和 webroot 两行挂载。自装 Nginx 把证书文件所在目录挂进容器。
+只做 DNS-01 和 CDN、这台机器没有 Nginx 时，从 compose 的 `renew.volumes` 里删掉这两行：
+
+```yaml
+- /www/server/panel/vhost/cert:/www/server/panel/vhost/cert
+- /var/www/acme:/var/www/acme
+```
+
+自装 Nginx 把 `fullchainPath` / `privkeyPath` 所在目录挂进容器，替换第一行。
 
 ## 启动之后
 
@@ -155,7 +162,8 @@ docker compose exec renew cat /var/lib/acme/state/www-example.json
 | 文档 | 内容 |
 | --- | --- |
 | [docs/配置.md](docs/配置.md) | 每个字段、`.env`、HTTP-01 的 Nginx 片段 |
-| [docs/使用.md](docs/使用.md) | 构建并推送镜像、服务器目录、更新镜像、本机测试 |
+| [docs/使用.md](docs/使用.md) | 构建并推送镜像、服务器第一次跑、更新镜像、本机测试 |
+| [docs/docker-compose.server.yml](docs/docker-compose.server.yml) | 服务器拉镜像用的 compose，含 `renew` 和 `web` |
 | [docs/执行流程.md](docs/执行流程.md) | 一轮里如何决定签发或跳过，Nginx / CDN 如何换证 |
 | [docs/源码.md](docs/源码.md) | 模块和导出函数 |
 | [docs/项目说明.md](docs/项目说明.md) | 改代码前看的约束 |
