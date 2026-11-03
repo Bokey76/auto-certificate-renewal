@@ -90,14 +90,14 @@ node -e "const fs=require('fs');const p='data/logs';fs.mkdirSync(p,{recursive:tr
 
 ## 操作和命令对照
 
-网页上的检查、暂停由时刻表进程消费。右边的 compose 命令是另开一个短生命周期容器，多做一轮后退出，不会关掉正在跑的 `renew`。时刻表正在写证书时，不要再开一个 `run`。
+网页上的检查、暂停写到 `data/control/`，由正在跑的时刻表进程消费，不会另开 Certbot。下面「命令行另开一轮」是再起一个短生命周期容器，多做一轮后退出，不会关掉正在跑的 `renew`。两套不要同时用：时刻表正在写证书时，不要再开一个 `run`。
 
 下面都在放 `docker-compose.yml` 的目录里执行。`<任务id>` 换成 `jobs[].id`。
 
-| 网页 | 做什么 | 对应命令 |
+| 网页 | 做什么 | 命令行另开一轮（效果相近，机制不同） |
 | --- | --- | --- |
-| 立即检查 | 让时刻表再跑全部任务一次。仍受 `renewBeforeDays` 约束 | `docker compose run --rm --entrypoint cert-renew renew run` |
-| 跑这一条 | 只检查这一条任务 | `docker compose run --rm --entrypoint cert-renew renew run --job <任务id>` |
+| 立即检查 | 给正在跑的 `renew` 留一张请求，由它再跑全部任务一次。仍受 `renewBeforeDays` 约束 | `docker compose run --rm --entrypoint cert-renew renew run` |
+| 跑这一条 | 同上，请求里带这一条任务的 `id` | `docker compose run --rm --entrypoint cert-renew renew run --job <任务id>` |
 | 勾选演练再检查 | 不改 Nginx / CDN、不跑钩子。DNS-01 仍可能写 TXT | 上面的命令加上 `--dry-run` |
 | 勾选强制续签再检查 | 忽略 `renewBeforeDays`，仍走 Certbot | 上面的命令加上 `--force` |
 | 暂停定时检查 | 到点不再跑。`data/` 记得这件事，容器重启后仍然暂停。正在跑的那一轮会跑完 | 无对应子命令（写 `data/control/paused`） |

@@ -46,7 +46,7 @@ docker compose logs --tail=100 renew
 
 ## 服务器上不放源码
 
-在开发机构建镜像，推到自己的容器镜像服务。服务器上放从 [docs/docker-compose.server.yml](docs/docker-compose.server.yml) 复制来的 `docker-compose.yml`（两处 `image` 写成仓库全名）、`config/config.yaml`、`.env` 和空的 `data/`。`config/admins.json`、`config/credentials.json` 第一次打开网页时生成。仓库根目录那份 `docker-compose.yml` 带 `build: .`，只给本机构建用。
+在开发机构建镜像，推到自己的容器镜像服务。服务器上放从 [docs/docker-compose.server.yml](docs/docker-compose.server.yml) 复制来的 `docker-compose.yml`（两处 `image` 写成仓库全名）、`config/config.yaml`、`.env` 和 `data/`。第一次可以是空的 `data/`，程序会签发新证；已经跑过的机器接着用原来的 `data/`。`config/admins.json`、`config/credentials.json` 第一次打开网页时生成。仓库根目录那份 `docker-compose.yml` 带 `build: .`，只给本机构建用。
 
 登录、构建、推送和第一次跑的步骤见 [docs/使用.md](docs/使用.md)。构建架构要和服务器一致，常见 x86_64 用 `linux/amd64`。
 
@@ -114,7 +114,7 @@ ssl_certificate_key  /www/server/panel/vhost/cert/example.com/privkey.pem;
 2. 按 `.env` 里的 `TZ`（默认 `Asia/Shanghai`）和 `schedule.hours`（默认 03:00、15:00）再跑。每次进入等待时随机加 0–30 分钟，多台机器错开。
 3. 配置读不了时进程退出，方便 compose 重启后重新读挂载。有任务失败时继续按时刻表跑。
 
-证书剩余时间多于 `renewBeforeDays`（默认 30 天），并且 Nginx / CDN 上次都成功：跳过，不调用 Certbot。证书缺失、进入续签窗口或上次签发失败：重新签发。证书没变、只有应用失败：不签发，只重试失败的 Nginx 或 CDN。
+到期判断看 `data/letsencrypt/live/<任务id>/` 里的证书，不看 Nginx 目录里已有的 pem。证书剩余时间多于 `renewBeforeDays`（默认 30 天），并且 Nginx / CDN 上次都成功：跳过，不调用 Certbot。数据目录里没有这张证书、进入续签窗口或上次签发失败：重新签发。证书没变、只有应用失败：不签发，只重试失败的 Nginx 或 CDN。更新镜像、删容器再 `up`，只要 `./data` 还在就不会为了发版再签发。
 
 `pid: host` 和 `privileged: true` 用来通过 `nsenter` 调用宿主机上的 nginx。HTTP-01 和 DNS-01 都不需要 `network_mode: host`。
 
@@ -141,7 +141,13 @@ ssl_certificate_key  /www/server/panel/vhost/cert/example.com/privkey.pem;
 
 ## 状态网页
 
-同一台机器上还有一个 `web` 容器，打开 `http://127.0.0.1:8787`。第一次打开会创建管理员。页面可以看状态、改配置、跑检查。打开方式、标签说明和与命令行的对照见 [docs/web.md](docs/web.md)。
+同一台机器上还有一个 `web` 容器，页面绑在服务器本机 `127.0.0.1:8787`，不对外网开放。在自己电脑上转发后再打开：
+
+```bash
+ssh -L 8787:127.0.0.1:8787 <用户>@<服务器>
+```
+
+浏览器访问 `http://127.0.0.1:8787`。第一次打开会创建管理员。页面可以看状态、改配置、跑检查。标签说明和与命令行的对照见 [docs/web.md](docs/web.md)。
 
 ## 确认是否生效
 
